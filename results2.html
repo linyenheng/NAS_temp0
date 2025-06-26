@@ -60,8 +60,7 @@
             <label for="plotType" class="block text-sm font-medium mb-2">Select Plot Type:</label>
             <select id="plotType" class="p-2 border rounded">
                 <option value="timeseries">Time Series</option>
-                <option value="map">Map (Simple)</option>
-                <option value="geomap">Geographic Map (with Coastlines)</option>
+                <option value="map">Map</option>
             </select>
         </div>
         
@@ -149,121 +148,71 @@
                 const url = './data_use/sst_data_small.json';
                 console.log(`Loading from: ${url}`);
                 
-                updateStatus('Fetching file...');
                 const response = await fetch(url);
                 console.log('Response:', response.status, response.statusText);
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                updateStatus('Reading file content...');
-                const text = await response.text();
-                console.log('File size:', text.length, 'characters');
-                
-                // Check if file is too large or has issues
-                if (text.length > 50000000) { // 50MB text limit
-                    throw new Error('File is too large to process in browser (>50MB). Please use a smaller file.');
-                }
-                
-                if (text.includes('version https://git-lfs.github.com/spec/v1')) {
-                    throw new Error('File is a Git LFS pointer. Please upload the actual JSON file.');
+                    if (response.status === 404) {
+                        throw new Error(`File not found (404). Make sure sst_data_small.json is uploaded to the data_use folder in your repository.`);
+                    } else {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
                 }
                 
                 updateStatus('Parsing JSON data...');
-                
-                // Try to parse JSON with timeout
-                let jsonData;
-                try {
-                    // Fix common JSON issues
-                    const fixedText = text.replace(/\bNaN\b/g, 'null').replace(/\bundefined\b/g, 'null');
-                    jsonData = JSON.parse(fixedText);
-                } catch (parseError) {
-                    console.error('JSON parse error:', parseError);
-                    throw new Error(`Invalid JSON format: ${parseError.message}`);
-                }
-                
-                console.log('JSON structure:', {
+                const jsonData = await response.json();
+                console.log('JSON data structure:', {
                     hasSST: !!jsonData.sst,
                     hasLat: !!jsonData.lat,
                     hasLon: !!jsonData.lon,
-                    hasTime: !!jsonData.time
+                    hasTime: !!jsonData.time,
+                    timeLength: jsonData.time?.length,
+                    latLength: jsonData.lat?.length,
+                    lonLength: jsonData.lon?.length
                 });
                 
-                // Validate required fields
                 if (!jsonData.sst || !jsonData.lat || !jsonData.lon || !jsonData.time) {
-                    throw new Error('Missing required fields. Need: sst, lat, lon, time');
+                    throw new Error('JSON file missing required fields: sst, lat, lon, time');
                 }
                 
-                updateStatus('Processing data arrays...');
+                updateStatus('Processing ERSST data...');
                 
-                // Process data with size limits
-                latData = Array.isArray(jsonData.lat) ? jsonData.lat : [jsonData.lat];
-                lonData = Array.isArray(jsonData.lon) ? jsonData.lon : [jsonData.lon];
-                timeData = Array.isArray(jsonData.time) ? jsonData.time : [jsonData.time];
-                
-                console.log('Data dimensions:', {
-                    time: timeData.length,
-                    lat: latData.length,
-                    lon: lonData.length
-                });
-                
-                // Limit data size to prevent hanging
-                const maxDataPoints = 1000000; // 1M data points max
-                const totalExpected = timeData.length * latData.length * lonData.length;
-                
-                if (totalExpected > maxDataPoints) {
-                    throw new Error(`Data too large: ${totalExpected} points. Max: ${maxDataPoints}. Please reduce file size.`);
-                }
-                
-                updateStatus('Processing SST data...');
-                
-                // Handle SST data carefully
+                // Handle different JSON structures
                 let flatSST;
-                if (Array.isArray(jsonData.sst)) {
-                    if (jsonData.sst.length > 0 && Array.isArray(jsonData.sst[0])) {
-                        if (jsonData.sst[0].length > 0 && Array.isArray(jsonData.sst[0][0])) {
-                            // 3D array
-                            updateStatus('Flattening 3D array...');
-                            flatSST = [];
-                            for (let t = 0; t < jsonData.sst.length; t++) {
-                                for (let lat = 0; lat < jsonData.sst[t].length; lat++) {
-                                    for (let lon = 0; lon < jsonData.sst[t][lat].length; lon++) {
-                                        flatSST.push(jsonData.sst[t][lat][lon]);
-                                    }
-                                }
-                                // Update progress for large arrays
-                                if (t % 50 === 0) {
-                                    updateStatus(`Processing... ${Math.round((t/jsonData.sst.length)*100)}%`);
-                                    await new Promise(resolve => setTimeout(resolve, 1)); // Allow UI update
-                                }
-                            }
-                        } else {
-                            // 2D array - flatten
-                            flatSST = jsonData.sst.flat();
-                        }
-                    } else {
-                        // 1D array
-                        flatSST = jsonData.sst;
-                    }
+                if (Array.isArray(jsonData.sst[0]) && Array.isArray(jsonData.sst[0][0])) {
+                    // 3D array: flatten it
+                    flatSST = jsonData.sst.flat(2);
+                    console.log('Flattened 3D SST array');
+                } else if (Array.isArray(jsonData.sst)) {
+                    // Already flattened
+                    flatSST = jsonData.sst;
+                    console.log('Using pre-flattened SST array');
                 } else {
-                    throw new Error('SST data is not an array');
+                    throw new Error('Unexpected SST data structure');
                 }
                 
-                updateStatus('Creating final arrays...');
                 sstData = new Float32Array(flatSST);
+                latData = jsonData.lat;
+                lonData = jsonData.lon;
                 
-                // Handle time conversion
-                if (timeData.length > 0 && typeof timeData[0] === 'string') {
-                    updateStatus('Converting time data...');
-                    timeData = timeData.map(t => {
+                // Handle time data conversion
+                if (typeof jsonData.time[0] === 'string') {
+                    // Convert time strings to days since 1800
+                    timeData = jsonData.time.map(t => {
                         const date = new Date(t);
-                        return (date - new Date(1800, 0, 1)) / (1000 * 60 * 60 * 24);
+                        const days1800 = (date - new Date(1800, 0, 1)) / (1000 * 60 * 60 * 24);
+                        return days1800;
                     });
+                    console.log('Converted time strings to days since 1800');
+                } else {
+                    // Assume already in days since 1800 format
+                    timeData = jsonData.time;
+                    console.log('Using time data as-is');
                 }
                 
                 dataLoaded = true;
-                updateStatus('Data loaded successfully!', 'success');
+                
+                updateStatus('Real ERSST data loaded successfully!', 'success');
                 
                 showDataInfo({
                     type: 'Real ERSST Data (data_use/sst_data_small.json)',
@@ -273,15 +222,28 @@
                     dataPoints: `${sstData.length.toLocaleString()} total data points`
                 });
                 
+                console.log('Data loaded successfully:', {
+                    timeLength: timeData.length,
+                    latLength: latData.length,
+                    lonLength: lonData.length,
+                    sstLength: sstData.length,
+                    expectedLength: timeData.length * latData.length * lonData.length,
+                    timeRange: [Math.min(...timeData), Math.max(...timeData)],
+                    latRange: [Math.min(...latData), Math.max(...latData)],
+                    lonRange: [Math.min(...lonData), Math.max(...lonData)]
+                });
+                
                 updatePlot();
                 
             } catch (error) {
-                console.error('Loading failed:', error);
-                updateStatus(`Error: ${error.message}`, 'error');
+                console.error('Data loading failed:', error);
+                updateStatus(`Failed to load data: ${error.message}`, 'error');
                 document.getElementById('plot').innerHTML = `
                     <div class="text-red-600 text-center p-4">
-                        <h3 class="font-bold">Loading Failed</h3>
+                        <h3 class="font-bold">Error Loading Data</h3>
                         <p class="mt-2">${error.message}</p>
+                        <p class="mt-2 text-sm">Expected file: <code>data_use/sst_data_small.json</code></p>
+                        <p class="mt-2 text-sm">Make sure this file exists and is not stored with Git LFS.</p>
                     </div>
                 `;
             }
@@ -417,147 +379,6 @@
                 return;
             }
 
-            // Calculate SST data for both map types
-            const mapData = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
-            const counts = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
-
-            for (let t of timeIndices) {
-                for (let i = 0; i < latIndices.length; i++) {
-                    for (let j = 0; j < lonIndices.length; j++) {
-                        const latIdx = latIndices[i];
-                        const lonIdx = lonIndices[j];
-                        const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
-                        const value = sstData[index];
-                        if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
-                            mapData[i][j] += value;
-                            counts[i][j]++;
-                        }
-                    }
-                }
-            }
-
-            if (statistic === 'mean') {
-                for (let i = 0; i < latIndices.length; i++) {
-                    for (let j = 0; j < lonIndices.length; j++) {
-                        mapData[i][j] = counts[i][j] > 0 ? mapData[i][j] / counts[i][j] : NaN;
-                    }
-                }
-            } else {
-                // Standard deviation calculation
-                const means = mapData.map((row, i) => row.map((val, j) => counts[i][j] > 0 ? val / counts[i][j] : NaN));
-                const variances = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
-                
-                for (let t of timeIndices) {
-                    for (let i = 0; i < latIndices.length; i++) {
-                        for (let j = 0; j < lonIndices.length; j++) {
-                            const latIdx = latIndices[i];
-                            const lonIdx = lonIndices[j];
-                            const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
-                            const value = sstData[index];
-                            if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
-                                const mean = means[i][j];
-                                if (!isNaN(mean)) {
-                                    variances[i][j] += (value - mean) ** 2;
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                for (let i = 0; i < latIndices.length; i++) {
-                    for (let j = 0; j < lonIndices.length; j++) {
-                        mapData[i][j] = counts[i][j] > 1 ? Math.sqrt(variances[i][j] / (counts[i][j] - 1)) : NaN;
-                    }
-                }
-            }
-
-            // Helper function to find nearest data point
-            function findNearestIndex(dataArray, targetValue) {
-                let minDistance = Infinity;
-                let nearestIndex = 0;
-                
-                for (let i = 0; i < dataArray.length; i++) {
-                    const distance = Math.abs(dataArray[i] - targetValue);
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        nearestIndex = i;
-                    }
-                }
-                return nearestIndex;
-            }
-
-            // Helper function to find range of indices
-            function findRangeIndices(dataArray, minVal, maxVal) {
-                // Handle longitude wraparound (360° = 0°)
-                if (dataArray === lonData) {
-                    if (maxVal >= 360) {
-                        maxVal = Math.max(...dataArray);
-                    }
-                    if (minVal >= 360) {
-                        minVal = 0;
-                    }
-                }
-                
-                // Find all indices within the range
-                const indices = [];
-                for (let i = 0; i < dataArray.length; i++) {
-                    const value = dataArray[i];
-                    if (value >= minVal && value <= maxVal) {
-                        indices.push(i);
-                    }
-                }
-                
-                // If no exact matches, find nearest neighbors
-                if (indices.length === 0) {
-                    const minIndex = findNearestIndex(dataArray, minVal);
-                    const maxIndex = findNearestIndex(dataArray, maxVal);
-                    const startIdx = Math.min(minIndex, maxIndex);
-                    const endIdx = Math.max(minIndex, maxIndex);
-                    for (let i = startIdx; i <= endIdx; i++) {
-                        indices.push(i);
-                    }
-                }
-                
-                const actualMin = indices.length > 0 ? Math.min(...indices.map(i => dataArray[i])) : minVal;
-                const actualMax = indices.length > 0 ? Math.max(...indices.map(i => dataArray[i])) : maxVal;
-                
-                return {
-                    indices: indices,
-                    actualMin: actualMin,
-                    actualMax: actualMax
-                };
-            }
-
-            // Find indices for selected ranges
-            const timeIndices = timeData.reduce((acc, t, i) => {
-                const date = new Date(1800, 0, 1 + t);
-                const year = date.getFullYear();
-                if (year >= yearMin && year <= yearMax) acc.push(i);
-                return acc;
-            }, []);
-
-            const latResult = findRangeIndices(latData, latMin, latMax);
-            const lonResult = findRangeIndices(lonData, lonMin, lonMax);
-            
-            const latIndices = latResult.indices;
-            const lonIndices = lonResult.indices;
-
-            console.log('Plot ranges:', {
-                latitude: { requested: [latMin, latMax], actual: [latResult.actualMin, latResult.actualMax], count: latIndices.length },
-                longitude: { requested: [lonMin, lonMax], actual: [lonResult.actualMin, lonResult.actualMax], count: lonIndices.length },
-                time: { requested: [yearMin, yearMax], count: timeIndices.length }
-            });
-
-            if (latIndices.length === 0 || lonIndices.length === 0 || timeIndices.length === 0) {
-                document.getElementById('plot').innerHTML = `
-                    <div class="text-red-600 text-center p-4">
-                        <h3 class="font-bold">No data found for selected range</h3>
-                        <p class="mt-2">Try adjusting your selection ranges.</p>
-                    </div>
-                `;
-                return;
-            }
-
             if (plotType === 'timeseries') {
                 const timeSeries = timeIndices.map(t => {
                     let sum = 0, count = 0;
@@ -596,10 +417,61 @@
                     margin: { t: 80, b: 60, l: 60, r: 60 }
                 });
                 
-                });
-                
-            } else if (plotType === 'map') {
-                // Simple map plotting (original heatmap)
+            } else {
+                // Map plotting
+                const mapData = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
+                const counts = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
+
+                for (let t of timeIndices) {
+                    for (let i = 0; i < latIndices.length; i++) {
+                        for (let j = 0; j < lonIndices.length; j++) {
+                            const latIdx = latIndices[i];
+                            const lonIdx = lonIndices[j];
+                            const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
+                            const value = sstData[index];
+                            if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
+                                mapData[i][j] += value;
+                                counts[i][j]++;
+                            }
+                        }
+                    }
+                }
+
+                if (statistic === 'mean') {
+                    for (let i = 0; i < latIndices.length; i++) {
+                        for (let j = 0; j < lonIndices.length; j++) {
+                            mapData[i][j] = counts[i][j] > 0 ? mapData[i][j] / counts[i][j] : NaN;
+                        }
+                    }
+                } else {
+                    // Standard deviation calculation
+                    const means = mapData.map((row, i) => row.map((val, j) => counts[i][j] > 0 ? val / counts[i][j] : NaN));
+                    const variances = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
+                    
+                    for (let t of timeIndices) {
+                        for (let i = 0; i < latIndices.length; i++) {
+                            for (let j = 0; j < lonIndices.length; j++) {
+                                const latIdx = latIndices[i];
+                                const lonIdx = lonIndices[j];
+                                const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
+                                const value = sstData[index];
+                                if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
+                                    const mean = means[i][j];
+                                    if (!isNaN(mean)) {
+                                        variances[i][j] += (value - mean) ** 2;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    for (let i = 0; i < latIndices.length; i++) {
+                        for (let j = 0; j < lonIndices.length; j++) {
+                            mapData[i][j] = counts[i][j] > 1 ? Math.sqrt(variances[i][j] / (counts[i][j] - 1)) : NaN;
+                        }
+                    }
+                }
+
                 Plotly.newPlot('plot', [{
                     z: mapData,
                     x: lonIndices.map(i => lonData[i]),
@@ -613,76 +485,6 @@
                     yaxis: { title: 'Latitude (°N)' },
                     margin: { t: 80, b: 60, l: 60, r: 60 }
                 });
-                
-            } else if (plotType === 'geomap') {
-                // Geographic map with coastlines and country borders
-                
-                // Convert data to 1D arrays for scatter plot on geographic map
-                const lons = [];
-                const lats = [];
-                const values = [];
-                
-                for (let i = 0; i < latIndices.length; i++) {
-                    for (let j = 0; j < lonIndices.length; j++) {
-                        if (!isNaN(mapData[i][j]) && isFinite(mapData[i][j])) {
-                            lats.push(latData[latIndices[i]]);
-                            lons.push(lonData[lonIndices[j]]);
-                            values.push(mapData[i][j]);
-                        }
-                    }
-                }
-
-                const traces = [
-                    {
-                        type: 'scattergeo',
-                        lon: lons,
-                        lat: lats,
-                        mode: 'markers',
-                        marker: {
-                            size: 8,
-                            color: values,
-                            colorscale: 'Viridis',
-                            colorbar: {
-                                title: statistic === 'mean' ? 'SST (°C)' : 'SST Std Dev (°C)',
-                                x: 1.02
-                            },
-                            line: { width: 0.5, color: 'white' }
-                        },
-                        text: values.map(v => `${v.toFixed(2)}°C`),
-                        hovertemplate: 'Lon: %{lon}°<br>Lat: %{lat}°<br>SST: %{text}<extra></extra>'
-                    }
-                ];
-
-                const layout = {
-                    title: `${statistic === 'mean' ? 'Mean' : 'Standard Deviation'} SST Geographic Map<br>(${latResult.actualMin}°N-${latResult.actualMax}°N, ${lonResult.actualMin}°E-${lonResult.actualMax}°E, ${yearMin}-${yearMax})`,
-                    geo: {
-                        projection: { type: 'natural earth' },
-                        showland: true,
-                        landcolor: 'rgb(243, 243, 243)',
-                        coastlinecolor: 'rgb(70, 70, 70)',
-                        coastlinewidth: 1,
-                        showocean: true,
-                        oceancolor: 'rgb(230, 245, 255)',
-                        showcountries: true,
-                        countrycolor: 'rgb(150, 150, 150)',
-                        countrywidth: 0.5,
-                        showlakes: true,
-                        lakecolor: 'rgb(230, 245, 255)',
-                        showrivers: false,
-                        lonaxis: {
-                            range: [Math.min(...lons) - 5, Math.max(...lons) + 5]
-                        },
-                        lataxis: {
-                            range: [Math.min(...lats) - 5, Math.max(...lats) + 5]
-                        },
-                        bgcolor: 'rgba(0,0,0,0)'
-                    },
-                    margin: { t: 80, b: 60, l: 60, r: 120 },
-                    paper_bgcolor: 'white',
-                    plot_bgcolor: 'white'
-                };
-
-                Plotly.newPlot('plot', traces, layout);
             }
         }
 
