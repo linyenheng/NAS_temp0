@@ -149,8 +149,10 @@
                 const url = './data_use/sst_data_small.json';
                 console.log(`Loading from: ${url}`);
                 
+                updateStatus('Fetching file...');
                 const response = await fetch(url);
                 console.log('Response:', response.status, response.statusText);
+                console.log('Response headers:', [...response.headers.entries()]);
                 
                 if (!response.ok) {
                     if (response.status === 404) {
@@ -163,12 +165,27 @@
                 updateStatus('Reading file content...');
                 const text = await response.text();
                 console.log('File size:', text.length, 'characters');
+                console.log('First 100 characters:', text.substring(0, 100));
+                
+                // Check if it's a Git LFS pointer
+                if (text.includes('version https://git-lfs.github.com/spec/v1')) {
+                    throw new Error('File is stored with Git LFS and cannot be accessed directly in browsers. Please upload the actual JSON file without LFS.');
+                }
                 
                 // Fix NaN values in JSON (replace with null)
+                updateStatus('Fixing NaN values...');
                 const fixedText = text.replace(/\bNaN\b/g, 'null');
                 
                 updateStatus('Parsing JSON data...');
-                const jsonData = JSON.parse(fixedText);
+                let jsonData;
+                try {
+                    jsonData = JSON.parse(fixedText);
+                } catch (parseError) {
+                    console.error('JSON parse error:', parseError);
+                    console.log('Problematic text around error:', text.substring(Math.max(0, parseError.message.match(/\d+/) - 50), parseError.message.match(/\d+/) + 50));
+                    throw new Error(`JSON parsing failed: ${parseError.message}`);
+                }
+                
                 console.log('JSON data structure:', {
                     hasSST: !!jsonData.sst,
                     hasLat: !!jsonData.lat,
@@ -189,6 +206,7 @@
                 let flatSST;
                 if (Array.isArray(jsonData.sst[0]) && Array.isArray(jsonData.sst[0][0])) {
                     // 3D array: flatten it
+                    updateStatus('Flattening 3D SST array...');
                     flatSST = jsonData.sst.flat(2);
                     console.log('Flattened 3D SST array');
                 } else if (Array.isArray(jsonData.sst)) {
@@ -199,13 +217,14 @@
                     throw new Error('Unexpected SST data structure');
                 }
                 
+                updateStatus('Creating data arrays...');
                 sstData = new Float32Array(flatSST);
                 latData = jsonData.lat;
                 lonData = jsonData.lon;
                 
                 // Handle time data conversion
                 if (typeof jsonData.time[0] === 'string') {
-                    // Convert time strings to days since 1800
+                    updateStatus('Converting time strings...');
                     timeData = jsonData.time.map(t => {
                         const date = new Date(t);
                         const days1800 = (date - new Date(1800, 0, 1)) / (1000 * 60 * 60 * 24);
@@ -213,7 +232,6 @@
                     });
                     console.log('Converted time strings to days since 1800');
                 } else {
-                    // Assume already in days since 1800 format
                     timeData = jsonData.time;
                     console.log('Using time data as-is');
                 }
@@ -245,13 +263,23 @@
                 
             } catch (error) {
                 console.error('Data loading failed:', error);
+                console.error('Error stack:', error.stack);
                 updateStatus(`Failed to load data: ${error.message}`, 'error');
                 document.getElementById('plot').innerHTML = `
                     <div class="text-red-600 text-center p-4">
                         <h3 class="font-bold">Error Loading Data</h3>
                         <p class="mt-2">${error.message}</p>
                         <p class="mt-2 text-sm">Expected file: <code>data_use/sst_data_small.json</code></p>
-                        <p class="mt-2 text-sm">Make sure this file exists and is not stored with Git LFS.</p>
+                        <p class="mt-2 text-sm">Check browser console (F12) for detailed error information.</p>
+                        <div class="mt-4 p-3 bg-gray-100 rounded text-left text-xs">
+                            <p><strong>Debug checklist:</strong></p>
+                            <ul class="list-disc list-inside mt-1">
+                                <li>File exists at correct path</li>
+                                <li>File is valid JSON (no NaN values)</li>
+                                <li>File is not stored with Git LFS</li>
+                                <li>File contains: sst, lat, lon, time fields</li>
+                            </ul>
+                        </div>
                     </div>
                 `;
             }
