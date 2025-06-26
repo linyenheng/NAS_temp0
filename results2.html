@@ -1,582 +1,200 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SST Analysis - Real Data</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <style>
-        #plot { width: 100%; max-width: 800px; margin: 20px auto; }
-        .input-group { display: flex; align-items: center; gap: 10px; }
-        .range-input { width: 80px; }
-        #status { 
-            padding: 10px; 
-            margin: 10px 0; 
-            border-radius: 4px; 
-            text-align: center;
-        }
-        .loading { background-color: #fef3c7; color: #92400e; }
-        .error { background-color: #fecaca; color: #991b1b; }
-        .success { background-color: #d1fae5; color: #065f46; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Results 2: SST Visualization</title>
+  <!-- Tailwind for layout -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Plotly -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <!-- NetCDF.js for reading .nc files -->
+  <script src="https://unpkg.com/netcdfjs@1.3.2/dist/netcdf.min.js"></script>
+  <style>
+    #plot { width: 100%; max-width: 800px; margin: 20px auto; height: 600px; }
+    #status { padding: 10px; margin: 10px 0; border-radius: 4px; text-align: center; }
+    .loading { background-color: #fef3c7; color: #92400e; }
+    .error   { background-color: #fecaca; color: #991b1b; }
+    .success { background-color: #d1fae5; color: #065f46; }
+  </style>
 </head>
 <body class="bg-gray-100 font-sans">
-    <nav class="bg-blue-600 text-white p-4">
-        <ul class="flex space-x-6 justify-center">
-            <li><a href="index.html" class="hover:underline">Introduction</a></li>
-            <li><a href="results.html" class="hover:underline">Results</a></li>
-            <li><a href="results2.html" class="font-bold">Results 2</a></li>
-            <li><a href="references.html" class="hover:underline">References</a></li>
-            <li><a href="contact.html" class="hover:underline">Contact</a></li>
-        </ul>
-    </nav>
-    
-    <div class="container mx-auto p-6">
-        <h1 class="text-3xl font-bold mb-4">Interactive SST Analysis</h1>
-        
-        <div id="status" class="loading">
-            Loading ERSST data from data_use/sst_data_small.json...
+  <nav class="bg-blue-600 text-white p-4">
+    <ul class="flex space-x-6 justify-center">
+      <li><a href="index.html" class="hover:underline">Introduction</a></li>
+      <li><a href="results.html" class="hover:underline">Results</a></li>
+      <li><a href="results2.html" class="font-bold">Results 2</a></li>
+      <li><a href="references.html" class="hover:underline">References</a></li>
+      <li><a href="contact.html" class="hover:underline">Contact</a></li>
+    </ul>
+  </nav>
+
+  <div class="container mx-auto p-6">
+    <h1 class="text-3xl font-bold mb-4">Interactive SST Analysis</h1>
+
+    <div id="status" class="loading">Status: Loading ERSST data...</div>
+
+    <!-- Plot type & statistic controls -->
+    <div id="controls" class="hidden mb-6">
+      <div class="flex items-center gap-4">
+        <div>
+          <label for="plotTypeSelect" class="block text-sm font-medium">Plot Type</label>
+          <select id="plotTypeSelect" class="p-2 border rounded">
+            <option value="map">Map</option>
+            <option value="timeseries">Time Series</option>
+          </select>
         </div>
-        
-        <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
-            <div class="flex">
-                <div class="flex-shrink-0">
-                    <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-                    </svg>
-                </div>
-                <div class="ml-3">
-                    <h3 class="text-sm font-medium text-blue-800">Data Source</h3>
-                    <div class="mt-2 text-sm text-blue-700">
-                        <p>This tool loads real ERSST data from: <code>data_use/sst_data_small.json</code></p>
-                        <p class="mt-1">Make sure the small/reduced JSON file is uploaded to your repository at that location.</p>
-                    </div>
-                </div>
-            </div>
+        <div id="statisticDiv">
+          <label for="statisticSelect" class="block text-sm font-medium">Statistic</label>
+          <select id="statisticSelect" class="p-2 border rounded">
+            <option value="mean">Mean</option>
+            <option value="std">Std Dev</option>
+          </select>
         </div>
-        
-        <div class="mb-6">
-            <label for="plotType" class="block text-sm font-medium mb-2">Select Plot Type:</label>
-            <select id="plotType" class="p-2 border rounded">
-                <option value="timeseries">Time Series</option>
-                <option value="map">Map (Simple)</option>
-                <option value="geomap">Geographic Map (with Coastlines)</option>
-            </select>
-        </div>
-        
-        <div class="mb-6">
-            <label class="block text-sm font-medium mb-2">Latitude Range:</label>
-            <div class="input-group">
-                <span>From:</span>
-                <input type="number" id="latMin" class="range-input p-1 border rounded" value="-30" min="-90" max="90" step="0.1">
-                <span>°N to:</span>
-                <input type="number" id="latMax" class="range-input p-1 border rounded" value="30" min="-90" max="90" step="0.1">
-                <span>°N</span>
-            </div>
-            <p class="text-xs text-gray-600 mt-1">Auto-maps to nearest available data points</p>
-        </div>
-        
-        <div class="mb-6">
-            <label class="block text-sm font-medium mb-2">Longitude Range:</label>
-            <div class="input-group">
-                <span>From:</span>
-                <input type="number" id="lonMin" class="range-input p-1 border rounded" value="0" min="0" max="360" step="0.1">
-                <span>°E to:</span>
-                <input type="number" id="lonMax" class="range-input p-1 border rounded" value="360" min="0" max="360" step="0.1">
-                <span>°E</span>
-            </div>
-            <p class="text-xs text-gray-600 mt-1">Auto-maps to nearest available data points</p>
-        </div>
-        
-        <div class="mb-6">
-            <label class="block text-sm font-medium mb-2">Time Period:</label>
-            <div class="input-group">
-                <span>From:</span>
-                <input type="number" id="yearMin" class="range-input p-1 border rounded" value="1979" min="1854" max="2023" step="1">
-                <span>to:</span>
-                <input type="number" id="yearMax" class="range-input p-1 border rounded" value="2023" min="1854" max="2023" step="1">
-            </div>
-        </div>
-        
-        <div id="statisticDiv" class="mb-6 hidden">
-            <label for="statistic" class="block text-sm font-medium mb-2">Select Statistic:</label>
-            <select id="statistic" class="p-2 border rounded">
-                <option value="mean">Mean</option>
-                <option value="std">Standard Deviation</option>
-            </select>
-        </div>
-        
-        <div class="mb-6">
-            <button id="updateBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Update Plot</button>
-        </div>
-        
-        <div id="plot"></div>
-        
-        <div id="dataInfo" class="mt-6 p-4 bg-gray-50 rounded hidden">
-            <h3 class="font-semibold mb-2">Data Information:</h3>
-            <div id="dataDetails"></div>
-        </div>
+        <button id="updateBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Update Plot</button>
+      </div>
     </div>
 
-    <script>
-        let sstData, lonData, latData, timeData;
-        let dataLoaded = false;
+    <!-- Plot container -->
+    <div id="plot"></div>
 
-        function updateStatus(message, type = 'loading') {
-            const statusEl = document.getElementById('status');
-            statusEl.className = type;
-            statusEl.textContent = message;
+    <!-- Data information -->
+    <div id="dataInfo" class="mt-6 p-4 bg-gray-50 rounded hidden">
+      <h3 class="font-semibold mb-2">Data Information:</h3>
+      <div id="dataDetails"></div>
+    </div>
+  </div>
+
+  <script>
+    let latData, lonData, timeData, sstData;
+    let nlat, nlon, ntime;
+
+    function updateStatus(msg, type = 'loading') {
+      const el = document.getElementById('status');
+      el.textContent = 'Status: ' + msg;
+      el.className = type;
+    }
+
+    function showDataInfo() {
+      const info = document.getElementById('dataInfo');
+      info.classList.remove('hidden');
+      document.getElementById('dataDetails').innerHTML = `
+        <p><strong>Time Steps:</strong> ${ntime}</p>
+        <p><strong>Latitude Points:</strong> ${nlat}</p>
+        <p><strong>Longitude Points:</strong> ${nlon}</p>
+        <p><strong>Total Grid Cells:</strong> ${nlat * nlon}</p>
+      `;
+      document.getElementById('controls').classList.remove('hidden');
+    }
+
+    async function loadData() {
+      try {
+        const url = './data_use/ersst.mnmean.nc';
+        const resp = await fetch(url);
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+        }
+        updateStatus('Parsing NetCDF data...');
+        const buffer = await resp.arrayBuffer();
+        const reader = new netcdfjs.NetCDFReader(buffer);
+
+        const latVar  = reader.variables.find(v => /lat/i.test(v.name));
+        const lonVar  = reader.variables.find(v => /lon/i.test(v.name));
+        const timeVar = reader.variables.find(v => /time/i.test(v.name));
+        const sstVar  = reader.variables.find(v => /sst/i.test(v.name));
+        if (!latVar || !lonVar || !timeVar || !sstVar) {
+          throw new Error('Missing lat/lon/time/sst variables in file');
         }
 
-        function showDataInfo(info) {
-            const infoEl = document.getElementById('dataInfo');
-            const detailsEl = document.getElementById('dataDetails');
-            detailsEl.innerHTML = `
-                <p><strong>Data Type:</strong> ${info.type}</p>
-                <p><strong>Time Range:</strong> ${info.timeRange}</p>
-                <p><strong>Latitude Range:</strong> ${info.latRange}</p>
-                <p><strong>Longitude Range:</strong> ${info.lonRange}</p>
-                <p><strong>Data Points:</strong> ${info.dataPoints}</p>
-            `;
-            infoEl.classList.remove('hidden');
+        latData  = reader.getDataVariable(latVar);
+        lonData  = reader.getDataVariable(lonVar);
+        timeData = reader.getDataVariable(timeVar).map(d => {
+          const dt = new Date(1800, 0, 1);
+          dt.setDate(dt.getDate() + d);
+          return dt.getFullYear();
+        });
+        sstData  = reader.getDataVariable(sstVar);
+
+        nlat = latData.length;
+        nlon = lonData.length;
+        ntime = timeData.length;
+
+        updateStatus('Data loaded successfully!', 'success');
+        showDataInfo();
+        updatePlot();
+      } catch (err) {
+        console.error(err);
+        updateStatus(`Error loading data: ${err.message}`, 'error');
+      }
+    }
+
+    function updatePlot() {
+      const stat = document.getElementById('statisticSelect').value;
+      const plotType = document.getElementById('plotTypeSelect').value;
+      updateStatus(`Plotting ${plotType} (${stat})...`);
+      const gridSize = nlat * nlon;
+
+      if (plotType === 'map') {
+        const mapData = Array.from({ length: nlat }, () => Array(nlon).fill(NaN));
+        for (let i = 0; i < nlat; i++) {
+          for (let j = 0; j < nlon; j++) {
+            const vals = [];
+            for (let t = 0; t < ntime; t++) {
+              const idx = t * gridSize + i * nlon + j;
+              const v = sstData[idx];
+              if (isFinite(v)) vals.push(v);
+            }
+            if (vals.length) {
+              const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+              mapData[i][j] = (stat === 'mean')
+                ? mean
+                : Math.sqrt(vals.reduce((sum, v) => sum + (v - mean) ** 2, 0) / vals.length);
+            }
+          }
         }
 
-        async function loadData() {
-            updateStatus('Loading ERSST data from data_use/sst_data_small.json...');
-            
-            try {
-                const url = './data_use/sst_data_small.json';
-                console.log(`Loading from: ${url}`);
-                
-                const response = await fetch(url);
-                console.log('Response:', response.status, response.statusText);
-                
-                if (!response.ok) {
-                    if (response.status === 404) {
-                        throw new Error(`File not found (404). Make sure sst_data_small.json is uploaded to the data_use folder in your repository.`);
-                    } else {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    }
-                }
-                
-                updateStatus('Parsing JSON data...');
-                const jsonData = await response.json();
-                console.log('JSON data structure:', {
-                    hasSST: !!jsonData.sst,
-                    hasLat: !!jsonData.lat,
-                    hasLon: !!jsonData.lon,
-                    hasTime: !!jsonData.time,
-                    timeLength: jsonData.time?.length,
-                    latLength: jsonData.lat?.length,
-                    lonLength: jsonData.lon?.length
-                });
-                
-                if (!jsonData.sst || !jsonData.lat || !jsonData.lon || !jsonData.time) {
-                    throw new Error('JSON file missing required fields: sst, lat, lon, time');
-                }
-                
-                updateStatus('Processing ERSST data...');
-                
-                // Handle different JSON structures
-                let flatSST;
-                if (Array.isArray(jsonData.sst[0]) && Array.isArray(jsonData.sst[0][0])) {
-                    // 3D array: flatten it
-                    flatSST = jsonData.sst.flat(2);
-                    console.log('Flattened 3D SST array');
-                } else if (Array.isArray(jsonData.sst)) {
-                    // Already flattened
-                    flatSST = jsonData.sst;
-                    console.log('Using pre-flattened SST array');
-                } else {
-                    throw new Error('Unexpected SST data structure');
-                }
-                
-                sstData = new Float32Array(flatSST);
-                latData = jsonData.lat;
-                lonData = jsonData.lon;
-                
-                // Handle time data conversion
-                if (typeof jsonData.time[0] === 'string') {
-                    // Convert time strings to days since 1800
-                    timeData = jsonData.time.map(t => {
-                        const date = new Date(t);
-                        const days1800 = (date - new Date(1800, 0, 1)) / (1000 * 60 * 60 * 24);
-                        return days1800;
-                    });
-                    console.log('Converted time strings to days since 1800');
-                } else {
-                    // Assume already in days since 1800 format
-                    timeData = jsonData.time;
-                    console.log('Using time data as-is');
-                }
-                
-                dataLoaded = true;
-                
-                updateStatus('Real ERSST data loaded successfully!', 'success');
-                
-                showDataInfo({
-                    type: 'Real ERSST Data (data_use/sst_data_small.json)',
-                    timeRange: `${timeData.length} time steps`,
-                    latRange: `${Math.min(...latData)}° - ${Math.max(...latData)}° (${latData.length} points)`,
-                    lonRange: `${Math.min(...lonData)}° - ${Math.max(...lonData)}° (${lonData.length} points)`,
-                    dataPoints: `${sstData.length.toLocaleString()} total data points`
-                });
-                
-                console.log('Data loaded successfully:', {
-                    timeLength: timeData.length,
-                    latLength: latData.length,
-                    lonLength: lonData.length,
-                    sstLength: sstData.length,
-                    expectedLength: timeData.length * latData.length * lonData.length,
-                    timeRange: [Math.min(...timeData), Math.max(...timeData)],
-                    latRange: [Math.min(...latData), Math.max(...latData)],
-                    lonRange: [Math.min(...lonData), Math.max(...lonData)]
-                });
-                
-                updatePlot();
-                
-            } catch (error) {
-                console.error('Data loading failed:', error);
-                updateStatus(`Failed to load data: ${error.message}`, 'error');
-                document.getElementById('plot').innerHTML = `
-                    <div class="text-red-600 text-center p-4">
-                        <h3 class="font-bold">Error Loading Data</h3>
-                        <p class="mt-2">${error.message}</p>
-                        <p class="mt-2 text-sm">Expected file: <code>data_use/sst_data_small.json</code></p>
-                        <p class="mt-2 text-sm">Make sure this file exists and is not stored with Git LFS.</p>
-                    </div>
-                `;
-            }
-        }
-
-        function validateInputs() {
-            const latMin = parseFloat(document.getElementById('latMin').value);
-            const latMax = parseFloat(document.getElementById('latMax').value);
-            const lonMin = parseFloat(document.getElementById('lonMin').value);
-            const lonMax = parseFloat(document.getElementById('lonMax').value);
-            const yearMin = parseInt(document.getElementById('yearMin').value);
-            const yearMax = parseInt(document.getElementById('yearMax').value);
-            
-            if (latMin >= latMax) {
-                alert('Latitude minimum must be less than maximum');
-                return false;
-            }
-            if (lonMin >= lonMax) {
-                alert('Longitude minimum must be less than maximum');
-                return false;
-            }
-            if (yearMin >= yearMax) {
-                alert('Start year must be less than end year');
-                return false;
-            }
-            return true;
-        }
-
-        function updatePlot() {
-            if (!dataLoaded || !sstData) {
-                console.log('Data not loaded yet');
-                return;
-            }
-            
-            if (!validateInputs()) return;
-
-            const plotType = document.getElementById('plotType').value;
-            const statisticDiv = document.getElementById('statisticDiv');
-            const statistic = document.getElementById('statistic').value;
-            const latMin = parseFloat(document.getElementById('latMin').value);
-            const latMax = parseFloat(document.getElementById('latMax').value);
-            const lonMin = parseFloat(document.getElementById('lonMin').value);
-            const lonMax = parseFloat(document.getElementById('lonMax').value);
-            const yearMin = parseInt(document.getElementById('yearMin').value);
-            const yearMax = parseInt(document.getElementById('yearMax').value);
-
-            statisticDiv.classList.toggle('hidden', plotType === 'timeseries');
-
-            // Helper function to find nearest data point
-            function findNearestIndex(dataArray, targetValue) {
-                let minDistance = Infinity;
-                let nearestIndex = 0;
-                
-                for (let i = 0; i < dataArray.length; i++) {
-                    const distance = Math.abs(dataArray[i] - targetValue);
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        nearestIndex = i;
-                    }
-                }
-                return nearestIndex;
-            }
-
-            // Helper function to find range of indices
-            function findRangeIndices(dataArray, minVal, maxVal) {
-                // Handle longitude wraparound (360° = 0°)
-                if (dataArray === lonData) {
-                    if (maxVal >= 360) {
-                        maxVal = Math.max(...dataArray);
-                    }
-                    if (minVal >= 360) {
-                        minVal = 0;
-                    }
-                }
-                
-                // Find all indices within the range
-                const indices = [];
-                for (let i = 0; i < dataArray.length; i++) {
-                    const value = dataArray[i];
-                    if (value >= minVal && value <= maxVal) {
-                        indices.push(i);
-                    }
-                }
-                
-                // If no exact matches, find nearest neighbors
-                if (indices.length === 0) {
-                    const minIndex = findNearestIndex(dataArray, minVal);
-                    const maxIndex = findNearestIndex(dataArray, maxVal);
-                    const startIdx = Math.min(minIndex, maxIndex);
-                    const endIdx = Math.max(minIndex, maxIndex);
-                    for (let i = startIdx; i <= endIdx; i++) {
-                        indices.push(i);
-                    }
-                }
-                
-                const actualMin = indices.length > 0 ? Math.min(...indices.map(i => dataArray[i])) : minVal;
-                const actualMax = indices.length > 0 ? Math.max(...indices.map(i => dataArray[i])) : maxVal;
-                
-                return {
-                    indices: indices,
-                    actualMin: actualMin,
-                    actualMax: actualMax
-                };
-            }
-
-            // Find indices for selected ranges
-            const timeIndices = timeData.reduce((acc, t, i) => {
-                const date = new Date(1800, 0, 1 + t);
-                const year = date.getFullYear();
-                if (year >= yearMin && year <= yearMax) acc.push(i);
-                return acc;
-            }, []);
-
-            const latResult = findRangeIndices(latData, latMin, latMax);
-            const lonResult = findRangeIndices(lonData, lonMin, lonMax);
-            
-            const latIndices = latResult.indices;
-            const lonIndices = lonResult.indices;
-
-            console.log('Plot ranges:', {
-                latitude: { requested: [latMin, latMax], actual: [latResult.actualMin, latResult.actualMax], count: latIndices.length },
-                longitude: { requested: [lonMin, lonMax], actual: [lonResult.actualMin, lonResult.actualMax], count: lonIndices.length },
-                time: { requested: [yearMin, yearMax], count: timeIndices.length }
-            });
-
-            if (latIndices.length === 0 || lonIndices.length === 0 || timeIndices.length === 0) {
-                document.getElementById('plot').innerHTML = `
-                    <div class="text-red-600 text-center p-4">
-                        <h3 class="font-bold">No data found for selected range</h3>
-                        <p class="mt-2">Try adjusting your selection ranges.</p>
-                    </div>
-                `;
-                return;
-            }
-
-            if (plotType === 'timeseries') {
-                const timeSeries = timeIndices.map(t => {
-                    let sum = 0, count = 0;
-                    
-                    for (let latIdx of latIndices) {
-                        for (let lonIdx of lonIndices) {
-                            const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
-                            const value = sstData[index];
-                            
-                            if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
-                                sum += value;
-                                count++;
-                            }
-                        }
-                    }
-                    
-                    return count > 0 ? sum / count : NaN;
-                });
-
-                const dates = timeIndices.map(i => {
-                    const date = new Date(1800, 0, 1 + timeData[i]);
-                    return date.getFullYear() + (date.getMonth() / 12);
-                });
-
-                Plotly.newPlot('plot', [{
-                    x: dates,
-                    y: timeSeries,
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: 'Mean SST',
-                    line: { color: 'blue', width: 2 }
-                }], {
-                    title: `Mean SST Time Series<br>(${latResult.actualMin}°N-${latResult.actualMax}°N, ${lonResult.actualMin}°E-${lonResult.actualMax}°E, ${yearMin}-${yearMax})`,
-                    xaxis: { title: 'Year' },
-                    yaxis: { title: 'SST (°C)' },
-                    margin: { t: 80, b: 60, l: 60, r: 60 }
-                });
-                
-            } else {
-                // Calculate SST data for both map types
-                const mapData = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
-                const counts = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
-
-                for (let t of timeIndices) {
-                    for (let i = 0; i < latIndices.length; i++) {
-                        for (let j = 0; j < lonIndices.length; j++) {
-                            const latIdx = latIndices[i];
-                            const lonIdx = lonIndices[j];
-                            const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
-                            const value = sstData[index];
-                            if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
-                                mapData[i][j] += value;
-                                counts[i][j]++;
-                            }
-                        }
-                    }
-                }
-
-                if (statistic === 'mean') {
-                    for (let i = 0; i < latIndices.length; i++) {
-                        for (let j = 0; j < lonIndices.length; j++) {
-                            mapData[i][j] = counts[i][j] > 0 ? mapData[i][j] / counts[i][j] : NaN;
-                        }
-                    }
-                } else {
-                    // Standard deviation calculation
-                    const means = mapData.map((row, i) => row.map((val, j) => counts[i][j] > 0 ? val / counts[i][j] : NaN));
-                    const variances = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
-                    
-                    for (let t of timeIndices) {
-                        for (let i = 0; i < latIndices.length; i++) {
-                            for (let j = 0; j < lonIndices.length; j++) {
-                                const latIdx = latIndices[i];
-                                const lonIdx = lonIndices[j];
-                                const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
-                                const value = sstData[index];
-                                if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
-                                    const mean = means[i][j];
-                                    if (!isNaN(mean)) {
-                                        variances[i][j] += (value - mean) ** 2;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    for (let i = 0; i < latIndices.length; i++) {
-                        for (let j = 0; j < lonIndices.length; j++) {
-                            mapData[i][j] = counts[i][j] > 1 ? Math.sqrt(variances[i][j] / (counts[i][j] - 1)) : NaN;
-                        }
-                    }
-                }
-
-                if (plotType === 'map') {
-                    // Simple map plotting (original heatmap)
-                    Plotly.newPlot('plot', [{
-                        z: mapData,
-                        x: lonIndices.map(i => lonData[i]),
-                        y: latIndices.map(i => latData[i]),
-                        type: 'heatmap',
-                        colorscale: 'Viridis',
-                        colorbar: { title: statistic === 'mean' ? 'SST (°C)' : 'SST Std Dev (°C)' }
-                    }], {
-                        title: `${statistic === 'mean' ? 'Mean' : 'Standard Deviation'} SST Map<br>(${latResult.actualMin}°N-${latResult.actualMax}°N, ${lonResult.actualMin}°E-${lonResult.actualMax}°E, ${yearMin}-${yearMax})`,
-                        xaxis: { title: 'Longitude (°E)' },
-                        yaxis: { title: 'Latitude (°N)' },
-                        margin: { t: 80, b: 60, l: 60, r: 60 }
-                    });
-                    
-                } else if (plotType === 'geomap') {
-                    // Geographic map with coastlines and country borders
-                    
-                    // Convert data to 1D arrays for scatter plot on geographic map
-                    const lons = [];
-                    const lats = [];
-                    const values = [];
-                    
-                    for (let i = 0; i < latIndices.length; i++) {
-                        for (let j = 0; j < lonIndices.length; j++) {
-                            if (!isNaN(mapData[i][j]) && isFinite(mapData[i][j])) {
-                                lats.push(latData[latIndices[i]]);
-                                lons.push(lonData[lonIndices[j]]);
-                                values.push(mapData[i][j]);
-                            }
-                        }
-                    }
-
-                    const traces = [
-                        {
-                            type: 'scattergeo',
-                            lon: lons,
-                            lat: lats,
-                            mode: 'markers',
-                            marker: {
-                                size: 8,
-                                color: values,
-                                colorscale: 'Viridis',
-                                colorbar: {
-                                    title: statistic === 'mean' ? 'SST (°C)' : 'SST Std Dev (°C)',
-                                    x: 1.02
-                                },
-                                line: { width: 0.5, color: 'white' }
-                            },
-                            text: values.map(v => `${v.toFixed(2)}°C`),
-                            hovertemplate: 'Lon: %{lon}°<br>Lat: %{lat}°<br>SST: %{text}<extra></extra>'
-                        }
-                    ];
-
-                    const layout = {
-                        title: `${statistic === 'mean' ? 'Mean' : 'Standard Deviation'} SST Geographic Map<br>(${latResult.actualMin}°N-${latResult.actualMax}°N, ${lonResult.actualMin}°E-${lonResult.actualMax}°E, ${yearMin}-${yearMax})`,
-                        geo: {
-                            projection: { type: 'natural earth' },
-                            showland: true,
-                            landcolor: 'rgb(243, 243, 243)',
-                            coastlinecolor: 'rgb(70, 70, 70)',
-                            coastlinewidth: 1,
-                            showocean: true,
-                            oceancolor: 'rgb(230, 245, 255)',
-                            showcountries: true,
-                            countrycolor: 'rgb(150, 150, 150)',
-                            countrywidth: 0.5,
-                            showlakes: true,
-                            lakecolor: 'rgb(230, 245, 255)',
-                            showrivers: false,
-                            lonaxis: {
-                                range: [Math.min(...lons) - 5, Math.max(...lons) + 5]
-                            },
-                            lataxis: {
-                                range: [Math.min(...lats) - 5, Math.max(...lats) + 5]
-                            },
-                            bgcolor: 'rgba(0,0,0,0)'
-                        },
-                        margin: { t: 80, b: 60, l: 60, r: 120 },
-                        paper_bgcolor: 'white',
-                        plot_bgcolor: 'white'
-                    };
-
-                    Plotly.newPlot('plot', traces, layout);
-                }
-            }
-        }
-
-        // Event listeners
-        document.getElementById('plotType').addEventListener('change', updatePlot);
-        document.getElementById('statistic').addEventListener('change', updatePlot);
-        document.getElementById('updateBtn').addEventListener('click', updatePlot);
-        
-        let timeout;
-        ['latMin', 'latMax', 'lonMin', 'lonMax', 'yearMin', 'yearMax'].forEach(id => {
-            document.getElementById(id).addEventListener('input', () => {
-                clearTimeout(timeout);
-                timeout = setTimeout(updatePlot, 500);
-            });
+        Plotly.newPlot('plot', [{
+          z: mapData,
+          x: lonData,
+          y: latData,
+          type: 'contour',
+          contours: { coloring: 'fill', showlabels: true, labelfont: { size: 12, color: 'black' } },
+          colorscale: 'Viridis',
+          colorbar: { title: stat === 'mean' ? 'SST (°C)' : 'SST Std Dev (°C)' }
+        }], {
+          title: `${stat === 'mean' ? 'Mean' : 'Std Dev'} SST Contour`, xaxis: { title: 'Longitude' }, yaxis: { title: 'Latitude' }
         });
 
-        // Load data when page loads
-        window.addEventListener('load', loadData);
-    </script>
+      } else {
+        const ts = [];
+        for (let t = 0; t < ntime; t++) {
+          const vals = [];
+          for (let i = 0; i < gridSize; i++) {
+            const v = sstData[t * gridSize + i];
+            if (isFinite(v)) vals.push(v);
+          }
+          if (vals.length) {
+            const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+            ts.push(stat === 'mean' ? mean : Math.sqrt(vals.reduce((sum, v) => sum + (v - mean) ** 2, 0) / vals.length));
+          } else ts.push(NaN);
+        }
+
+        Plotly.newPlot('plot', [{ x: timeData, y: ts, mode: 'lines+markers', type: 'scatter',
+          name: stat === 'mean' ? 'Mean SST' : 'SST Std Dev' }], {
+          title: `Time Series of ${stat === 'mean' ? 'Mean' : 'Std Dev'} SST`, xaxis: { title: 'Year' }, yaxis: { title: 'SST (°C)' }
+        });
+      }
+      updateStatus('Plot ready!', 'success');
+    }
+
+    // Event listeners
+    document.getElementById('updateBtn').addEventListener('click', updatePlot);
+    document.getElementById('plotTypeSelect').addEventListener('change', updatePlot);
+    document.getElementById('statisticSelect').addEventListener('change', updatePlot);
+
+    // Load default NetCDF on page load
+    window.addEventListener('load', loadData);
+  </script>
 </body>
 </html>
+
