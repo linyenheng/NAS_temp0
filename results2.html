@@ -33,6 +33,14 @@
 
     <div class="section">
         <div class="control-group">
+            <label>Data Source</label>
+            <p>This tool loads real ERSST data from: data_use/ersst.mnmean.nc</p>
+            <p>Make sure the NetCDF file is uploaded to your repository at that location.</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="control-group">
             <label>Select Plot Type:</label><br>
             <select id="plotType">
                 <option value="timeseries">Time Series</option>
@@ -77,12 +85,6 @@
     </div>
 
     <div class="section">
-        <h3>Data Source</h3>
-        <p>This tool loads real ERSST data from: data_use/ersst.mnmean.nc</p>
-        <p>Make sure the NetCDF file is uploaded to your repository at that location.</p>
-    </div>
-
-    <div class="section">
         <h3>Data Information:</h3>
         <p id="dataInfo"></p>
     </div>
@@ -98,10 +100,10 @@
             .then(response => response.arrayBuffer())
             .then(buffer => {
                 const reader = new netcdfjs.NetCDFReader(buffer);
-                sstData = reader.getDataVariable('sst')[0]; // Assuming sst is 3D: [time, lat, lon]
+                sstData = reader.getDataVariable('sst')[0]; // Adjust if variable name differs
                 lat = reader.getDataVariable('lat');
                 lon = reader.getDataVariable('lon');
-                time = reader.getDataVariable('time'); // Assuming time in years or months
+                time = reader.getDataVariable('time');
                 document.getElementById('dataInfo').innerText = `Loaded data: ${lat.length} latitudes, ${lon.length} longitudes, ${time.length} time points`;
             })
             .catch(error => {
@@ -189,21 +191,30 @@
                     x: lonSubset,
                     y: latSubset,
                     type: 'contour',
-                    colorscale: 'Viridis',
-                    contours: { coloring: 'fill', showlines: true },
-                    geo: {
-                        showcoastlines: true,
-                        coastlinecolor: 'black',
-                        showland: true,
-                        landcolor: 'lightgray'
-                    }
+                    colorscale: 'Portland', // Updated colorscale for better contrast
+                    contours: {
+                        coloring: 'fill',
+                        showlines: true,
+                        start: Math.min(...plotData.flat()),
+                        end: Math.max(...plotData.flat()),
+                        size: (Math.max(...plotData.flat()) - Math.min(...plotData.flat())) / 20
+                    },
+                    line: { width: 0.5 },
+                    showscale: true
                 }];
             }
 
             const layout = {
                 title: `SST ${statistic === 'mean' ? 'Mean' : 'Standard Deviation'} (${plotType})`,
                 xaxis: { title: plotType === 'timeseries' ? 'Time' : 'Longitude' },
-                yaxis: { title: plotType === 'timeseries' ? 'SST (°C)' : 'Latitude' }
+                yaxis: { title: plotType === 'timeseries' ? 'SST (°C)' : 'Latitude' },
+                geo: plotType === 'geomap' ? {
+                    showcoastlines: true,
+                    coastlinecolor: 'black',
+                    showland: true,
+                    landcolor: 'lightgray',
+                    projection: { type: 'equirectangular' }
+                } : {}
             };
 
             Plotly.newPlot('plot', trace, layout);
