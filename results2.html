@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SST Analysis - Real Data Attempt</title>
+    <title>SST Analysis - Real Data</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/netcdfjs/2.0.2/netcdfjs.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         #plot { width: 100%; max-width: 800px; margin: 20px auto; }
@@ -20,7 +19,6 @@
         .loading { background-color: #fef3c7; color: #92400e; }
         .error { background-color: #fecaca; color: #991b1b; }
         .success { background-color: #d1fae5; color: #065f46; }
-        .warning { background-color: #fed7aa; color: #9a3412; }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -38,7 +36,7 @@
         <h1 class="text-3xl font-bold mb-4">Interactive SST Analysis</h1>
         
         <div id="status" class="loading">
-            Attempting to load NetCDF data...
+            Loading ERSST data from data_use/sst_data_small.json...
         </div>
         
         <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
@@ -49,16 +47,10 @@
                     </svg>
                 </div>
                 <div class="ml-3">
-                    <h3 class="text-sm font-medium text-blue-800">Data Loading Options</h3>
+                    <h3 class="text-sm font-medium text-blue-800">Data Source</h3>
                     <div class="mt-2 text-sm text-blue-700">
-                        <p>This tool will try to load data in this order:</p>
-                        <ol class="list-decimal list-inside mt-1">
-                            <li><strong>SharePoint JSON</strong> - Your converted data file (fastest)</li>
-                            <li><strong>SharePoint Alternative</strong> - Backup SharePoint access method</li>
-                            <li><strong>GitHub NetCDF</strong> - Original file (Git LFS limitation)</li>
-                            <li><strong>Simulated Data</strong> - Fallback matching your file structure</li>
-                        </ol>
-                        <p class="mt-2"><strong>SharePoint link configured!</strong> The tool will attempt to download your JSON file automatically.</p>
+                        <p>This tool loads real ERSST data from: <code>data_use/sst_data_small.json</code></p>
+                        <p class="mt-1">Make sure the small/reduced JSON file is uploaded to your repository at that location.</p>
                     </div>
                 </div>
             </div>
@@ -116,7 +108,6 @@
         
         <div class="mb-6">
             <button id="updateBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Update Plot</button>
-            <button id="reloadBtn" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 ml-2">Retry Data Load</button>
         </div>
         
         <div id="plot"></div>
@@ -130,7 +121,6 @@
     <script>
         let sstData, lonData, latData, timeData;
         let dataLoaded = false;
-        let usingSimulatedData = false;
 
         function updateStatus(message, type = 'loading') {
             const statusEl = document.getElementById('status');
@@ -151,246 +141,111 @@
             infoEl.classList.remove('hidden');
         }
 
-        async function loadRealData() {
-            updateStatus('Attempting to load real data...');
+        async function loadData() {
+            updateStatus('Loading ERSST data from data_use/sst_data_small.json...');
             
             try {
-                // Try multiple data sources
-                const urls = [
-                    // Your SharePoint JSON file (direct download link)
-                    'https://mstate-my.sharepoint.com/_layouts/15/download.aspx?SourceUrl=/personal/yl756_msstate_edu/Documents/ERSTq-9C7jNBsDuBgfYA9vYBTcFqdjX0YpyXI-jmewNgpA',
-                    // Alternative SharePoint access method
-                    'https://mstate-my.sharepoint.com/:u:/g/personal/yl756_msstate_edu/ERSTq-9C7jNBsDuBgfYA9vYBTcFqdjX0YpyXI-jmewNgpA?download=1',
-                    // Fallback to original NetCDF attempts
-                    'https://raw.githubusercontent.com/linyenheng/NAS_temp0/main/data_use/ersst.mnmean.nc',
-                    'https://github.com/linyenheng/NAS_temp0/raw/main/data_use/ersst.mnmean.nc'
-                ];
+                const url = './data_use/sst_data_small.json';
+                console.log(`Loading from: ${url}`);
                 
-                for (let i = 0; i < urls.length; i++) {
-                    const url = urls[i];
-                    try {
-                        updateStatus(`Trying data source ${i + 1}/${urls.length}...`);
-                        
-                        const response = await fetch(url);
-                        console.log(`Response from ${url}:`, response.status);
-                        
-                        if (!response.ok) {
-                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                        }
-                        
-                        const contentType = response.headers.get('content-type');
-                        console.log('Content type:', contentType);
-                        
-                        // Handle JSON data (from SharePoint)
-                        if (i < 2 || contentType?.includes('application/json')) {
-                            updateStatus('Loading JSON data from SharePoint...');
-                            const jsonData = await response.json();
-                            
-                            // Extract data from JSON structure
-                            if (jsonData.sst && jsonData.lat && jsonData.lon && jsonData.time) {
-                                sstData = new Float32Array(jsonData.sst.flat(2)); // Flatten 3D array
-                                latData = jsonData.lat;
-                                lonData = jsonData.lon;
-                                timeData = jsonData.time.map(t => {
-                                    // Convert time string back to days since 1800
-                                    const date = new Date(t);
-                                    const days1800 = (date - new Date(1800, 0, 1)) / (1000 * 60 * 60 * 24);
-                                    return days1800;
-                                });
-                                
-                                dataLoaded = true;
-                                usingSimulatedData = false;
-                                
-                                updateStatus('Real JSON data loaded successfully from SharePoint!', 'success');
-                                
-                                showDataInfo({
-                                    type: 'Real ERSST Data (JSON from SharePoint)',
-                                    timeRange: `${jsonData.time[0]} - ${jsonData.time[jsonData.time.length - 1]}`,
-                                    latRange: `${Math.min(...latData)}° - ${Math.max(...latData)}°`,
-                                    lonRange: `${Math.min(...lonData)}° - ${Math.max(...lonData)}°`,
-                                    dataPoints: sstData.length.toLocaleString()
-                                });
-                                
-                                updatePlot();
-                                return; // Success!
-                            } else {
-                                throw new Error('JSON structure does not match expected format');
-                            }
-                        }
-                        
-                        // Handle NetCDF data (fallback)
-                        else {
-                            const text = await response.text();
-                            console.log('Response preview:', text.substring(0, 200));
-                            
-                            if (text.includes('version https://git-lfs.github.com/spec/v1')) {
-                                throw new Error('File is stored in Git LFS and not directly accessible');
-                            }
-                            
-                            // Try NetCDF parsing
-                            if (typeof NetCDFReader === 'undefined') {
-                                throw new Error('NetCDF library not loaded');
-                            }
-                            
-                            const buffer = await fetch(url).then(r => r.arrayBuffer());
-                            const reader = new NetCDFReader(buffer);
-                            
-                            sstData = reader.getDataVariable('sst');
-                            lonData = reader.getDataVariable('lon');
-                            latData = reader.getDataVariable('lat');
-                            timeData = reader.getDataVariable('time');
-                            
-                            dataLoaded = true;
-                            usingSimulatedData = false;
-                            
-                            updateStatus('Real NetCDF data loaded successfully!', 'success');
-                            
-                            showDataInfo({
-                                type: 'Real ERSST NetCDF Data',
-                                timeRange: `${Math.min(...timeData)} - ${Math.max(...timeData)} (days since 1800)`,
-                                latRange: `${Math.min(...latData)}° - ${Math.max(...latData)}°`,
-                                lonRange: `${Math.min(...lonData)}° - ${Math.max(...lonData)}°`,
-                                dataPoints: sstData.length.toLocaleString()
-                            });
-                            
-                            updatePlot();
-                            return; // Success!
-                        }
-                        
-                    } catch (urlError) {
-                        console.log(`Failed to load from ${url}:`, urlError.message);
-                        continue;
+                const response = await fetch(url);
+                console.log('Response:', response.status, response.statusText);
+                
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        throw new Error(`File not found (404). Make sure sst_data_small.json is uploaded to the data_use folder in your repository.`);
+                    } else {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
                 }
                 
-                throw new Error('All URL attempts failed');
+                updateStatus('Parsing JSON data...');
+                const jsonData = await response.json();
+                console.log('JSON data structure:', {
+                    hasSST: !!jsonData.sst,
+                    hasLat: !!jsonData.lat,
+                    hasLon: !!jsonData.lon,
+                    hasTime: !!jsonData.time,
+                    timeLength: jsonData.time?.length,
+                    latLength: jsonData.lat?.length,
+                    lonLength: jsonData.lon?.length
+                });
                 
-            } catch (error) {
-                console.error('Real data loading failed:', error);
-                updateStatus(`Real data unavailable: ${error.message}. Loading simulated data...`, 'warning');
-                
-                // Fall back to simulated data
-                setTimeout(loadSimulatedData, 1000);
-            }
-        }
-
-        function loadSimulatedData() {
-            updateStatus('Loading simulated ERSST v5 data matching your file structure...');
-            
-            try {
-                // Create simulated data matching your exact NetCDF structure
-                const latRange = [];
-                const lonRange = [];
-                const timeRange = [];
-                
-                // Match your file: 89 latitude points (-88° to 88° at 2° resolution)
-                for (let lat = -88; lat <= 88; lat += 2) {
-                    latRange.push(lat);
+                if (!jsonData.sst || !jsonData.lat || !jsonData.lon || !jsonData.time) {
+                    throw new Error('JSON file missing required fields: sst, lat, lon, time');
                 }
                 
-                // Match your file: 180 longitude points (0° to 358° at 2° resolution)  
-                for (let lon = 0; lon <= 358; lon += 2) {
-                    lonRange.push(lon);
+                updateStatus('Processing ERSST data...');
+                
+                // Handle different JSON structures
+                let flatSST;
+                if (Array.isArray(jsonData.sst[0]) && Array.isArray(jsonData.sst[0][0])) {
+                    // 3D array: flatten it
+                    flatSST = jsonData.sst.flat(2);
+                    console.log('Flattened 3D SST array');
+                } else if (Array.isArray(jsonData.sst)) {
+                    // Already flattened
+                    flatSST = jsonData.sst;
+                    console.log('Using pre-flattened SST array');
+                } else {
+                    throw new Error('Unexpected SST data structure');
                 }
                 
-                // Match your file: 533 monthly time steps (1979-2023)
-                const startYear = 1979;
-                const endYear = 2023;
-                for (let year = startYear; year <= endYear; year++) {
-                    for (let month = 0; month < 12; month++) {
-                        // Days since 1800-1-1 (matching your time units)
-                        const daysSince1800 = (year - 1800) * 365.25 + month * 30.44;
-                        timeRange.push(daysSince1800);
-                        if (timeRange.length >= 533) break; // Match exact count
-                    }
-                    if (timeRange.length >= 533) break;
+                sstData = new Float32Array(flatSST);
+                latData = jsonData.lat;
+                lonData = jsonData.lon;
+                
+                // Handle time data conversion
+                if (typeof jsonData.time[0] === 'string') {
+                    // Convert time strings to days since 1800
+                    timeData = jsonData.time.map(t => {
+                        const date = new Date(t);
+                        const days1800 = (date - new Date(1800, 0, 1)) / (1000 * 60 * 60 * 24);
+                        return days1800;
+                    });
+                    console.log('Converted time strings to days since 1800');
+                } else {
+                    // Assume already in days since 1800 format
+                    timeData = jsonData.time;
+                    console.log('Using time data as-is');
                 }
                 
-                // Generate realistic SST data matching ERSST v5 characteristics
-                // Data structure: sst(time, lat, lon) - 533 x 89 x 180
-                const sstArray = new Float32Array(timeRange.length * latRange.length * lonRange.length);
-                let index = 0;
-                
-                for (let t = 0; t < timeRange.length; t++) {
-                    const year = startYear + Math.floor(t / 12);
-                    const month = t % 12;
-                    
-                    for (let latIdx = 0; latIdx < latRange.length; latIdx++) {
-                        const lat = latRange[latIdx];
-                        
-                        for (let lonIdx = 0; lonIdx < lonRange.length; lonIdx++) {
-                            const lon = lonRange[lonIdx];
-                            
-                            // Realistic SST modeling based on ERSST v5 characteristics
-                            let baseTemp = 15; // Base temperature
-                            
-                            // Strong latitude effect (tropical = warm, polar = cold)
-                            baseTemp += (25 - Math.abs(lat)) * 0.5;
-                            
-                            // Seasonal variation (stronger in higher latitudes)
-                            const seasonalStrength = 1 + Math.abs(lat) / 90;
-                            const seasonalVariation = Math.sin((month - 3) * Math.PI / 6) * 6 * seasonalStrength;
-                            baseTemp += seasonalVariation * (lat > 0 ? 1 : -1); // Opposite seasons
-                            
-                            // Long-term warming trend (matches ERSST v5 trends)
-                            const warming = (year - 1979) * 0.015; // ~0.15°C per decade
-                            baseTemp += warming;
-                            
-                            // Regional oceanographic features
-                            if (lon >= 120 && lon <= 280 && Math.abs(lat) <= 30) { // Pacific tropics
-                                // ENSO-like variability
-                                const ensoPhase = Math.sin((year - 1979) * 0.8 + lon * 0.01) * 2;
-                                baseTemp += ensoPhase;
-                            }
-                            
-                            if (lon >= 300 && lon <= 360 && lat >= 0 && lat <= 60) { // North Atlantic
-                                // AMO-like variability
-                                const amoPhase = Math.sin((year - 1979) * 0.1) * 1.5;
-                                baseTemp += amoPhase;
-                            }
-                            
-                            // Add realistic noise
-                            const noise = (Math.random() - 0.5) * 2.5;
-                            
-                            // Land/ice mask (use ERSST fill value)
-                            if (Math.abs(lat) > 80 || // High Arctic/Antarctic
-                                (lon >= 60 && lon <= 140 && lat >= 60) || // Siberia/Arctic
-                                (lon >= 20 && lon <= 50 && lat <= -60) || // Antarctica
-                                (lon >= 260 && lon <= 300 && lat >= 20 && lat <= 60)) { // North America
-                                sstArray[index] = -9.96921e+36; // ERSST missing value
-                            } else {
-                                // Ensure realistic temperature range (-1.8 to 42.3°C from your ncdump)
-                                let finalTemp = Math.max(-1.8, Math.min(42.3, baseTemp + noise));
-                                sstArray[index] = finalTemp;
-                            }
-                            
-                            index++;
-                        }
-                    }
-                }
-                
-                latData = latRange;
-                lonData = lonRange;
-                timeData = timeRange;
-                sstData = sstArray;
                 dataLoaded = true;
-                usingSimulatedData = true;
                 
-                updateStatus('Simulated ERSST v5 data loaded (matches your file structure)', 'success');
+                updateStatus('Real ERSST data loaded successfully!', 'success');
                 
                 showDataInfo({
-                    type: 'Simulated ERSST v5 Data (matching your NetCDF structure)',
-                    timeRange: `${startYear} - ${endYear} (${timeRange.length} months, matching 533 time steps)`,
-                    latRange: `${Math.min(...latData)}° - ${Math.max(...latData)}° (89 points)`,
-                    lonRange: `${Math.min(...lonData)}° - ${Math.max(...lonData)}° (180 points)`,
-                    dataPoints: `${sstData.length.toLocaleString()} (${timeRange.length} × ${latRange.length} × ${lonRange.length})`
+                    type: 'Real ERSST Data (data_use/sst_data_small.json)',
+                    timeRange: `${timeData.length} time steps`,
+                    latRange: `${Math.min(...latData)}° - ${Math.max(...latData)}° (${latData.length} points)`,
+                    lonRange: `${Math.min(...lonData)}° - ${Math.max(...lonData)}° (${lonData.length} points)`,
+                    dataPoints: `${sstData.length.toLocaleString()} total data points`
+                });
+                
+                console.log('Data loaded successfully:', {
+                    timeLength: timeData.length,
+                    latLength: latData.length,
+                    lonLength: lonData.length,
+                    sstLength: sstData.length,
+                    expectedLength: timeData.length * latData.length * lonData.length,
+                    timeRange: [Math.min(...timeData), Math.max(...timeData)],
+                    latRange: [Math.min(...latData), Math.max(...latData)],
+                    lonRange: [Math.min(...lonData), Math.max(...lonData)]
                 });
                 
                 updatePlot();
                 
             } catch (error) {
-                console.error('Error creating simulated data:', error);
-                updateStatus('Error loading data: ' + error.message, 'error');
+                console.error('Data loading failed:', error);
+                updateStatus(`Failed to load data: ${error.message}`, 'error');
+                document.getElementById('plot').innerHTML = `
+                    <div class="text-red-600 text-center p-4">
+                        <h3 class="font-bold">Error Loading Data</h3>
+                        <p class="mt-2">${error.message}</p>
+                        <p class="mt-2 text-sm">Expected file: <code>data_use/sst_data_small.json</code></p>
+                        <p class="mt-2 text-sm">Make sure this file exists and is not stored with Git LFS.</p>
+                    </div>
+                `;
             }
         }
 
@@ -452,23 +307,19 @@
                 return nearestIndex;
             }
 
-            // Helper function to find range of indices between two target values
+            // Helper function to find range of indices
             function findRangeIndices(dataArray, minVal, maxVal) {
-                console.log(`Finding range for ${dataArray === lonData ? 'longitude' : 'latitude'}:`, {minVal, maxVal});
-                
                 // Handle longitude wraparound (360° = 0°)
                 if (dataArray === lonData) {
                     if (maxVal >= 360) {
-                        maxVal = Math.max(...dataArray); // Use the maximum available longitude
-                        console.log(`Adjusted maxVal to ${maxVal} for longitude`);
+                        maxVal = Math.max(...dataArray);
                     }
                     if (minVal >= 360) {
-                        minVal = 0; // Wrap around to 0°
-                        console.log(`Adjusted minVal to ${minVal} for longitude`);
+                        minVal = 0;
                     }
                 }
                 
-                // Find all indices within the range (not just nearest endpoints)
+                // Find all indices within the range
                 const indices = [];
                 for (let i = 0; i < dataArray.length; i++) {
                     const value = dataArray[i];
@@ -477,15 +328,12 @@
                     }
                 }
                 
-                // If no exact matches found, find nearest neighbors
+                // If no exact matches, find nearest neighbors
                 if (indices.length === 0) {
-                    console.log('No exact matches, finding nearest neighbors');
                     const minIndex = findNearestIndex(dataArray, minVal);
                     const maxIndex = findNearestIndex(dataArray, maxVal);
-                    
                     const startIdx = Math.min(minIndex, maxIndex);
                     const endIdx = Math.max(minIndex, maxIndex);
-                    
                     for (let i = startIdx; i <= endIdx; i++) {
                         indices.push(i);
                     }
@@ -494,23 +342,14 @@
                 const actualMin = indices.length > 0 ? Math.min(...indices.map(i => dataArray[i])) : minVal;
                 const actualMax = indices.length > 0 ? Math.max(...indices.map(i => dataArray[i])) : maxVal;
                 
-                console.log(`Range result:`, {
-                    requested: [minVal, maxVal],
-                    actual: [actualMin, actualMax],
-                    indices: indices.length,
-                    firstFewValues: indices.slice(0, 5).map(i => dataArray[i])
-                });
-                
                 return {
                     indices: indices,
                     actualMin: actualMin,
-                    actualMax: actualMax,
-                    requestedMin: minVal,
-                    requestedMax: maxVal
+                    actualMax: actualMax
                 };
             }
 
-            // Find indices for the selected ranges using nearest neighbor approach
+            // Find indices for selected ranges
             const timeIndices = timeData.reduce((acc, t, i) => {
                 const date = new Date(1800, 0, 1 + t);
                 const year = date.getFullYear();
@@ -524,48 +363,17 @@
             const latIndices = latResult.indices;
             const lonIndices = lonResult.indices;
 
-            console.log('Data arrays info:', {
-                lonData: {
-                    length: lonData.length,
-                    first5: lonData.slice(0, 5),
-                    last5: lonData.slice(-5),
-                    range: [Math.min(...lonData), Math.max(...lonData)]
-                },
-                latData: {
-                    length: latData.length,
-                    first5: latData.slice(0, 5),
-                    last5: latData.slice(-5),
-                    range: [Math.min(...latData), Math.max(...latData)]
-                }
-            });
-
-            console.log('Nearest neighbor mapping:', {
-                latitude: {
-                    requested: [latMin, latMax],
-                    actual: [latResult.actualMin, latResult.actualMax],
-                    indicesCount: latIndices.length
-                },
-                longitude: {
-                    requested: [lonMin, lonMax],
-                    actual: [lonResult.actualMin, lonResult.actualMax],
-                    indicesCount: lonIndices.length
-                },
-                time: {
-                    requested: [yearMin, yearMax],
-                    indicesCount: timeIndices.length
-                }
+            console.log('Plot ranges:', {
+                latitude: { requested: [latMin, latMax], actual: [latResult.actualMin, latResult.actualMax], count: latIndices.length },
+                longitude: { requested: [lonMin, lonMax], actual: [lonResult.actualMin, lonResult.actualMax], count: lonIndices.length },
+                time: { requested: [yearMin, yearMax], count: timeIndices.length }
             });
 
             if (latIndices.length === 0 || lonIndices.length === 0 || timeIndices.length === 0) {
-                console.error('No data found:', {
-                    latIndices: latIndices.length,
-                    lonIndices: lonIndices.length, 
-                    timeIndices: timeIndices.length
-                });
                 document.getElementById('plot').innerHTML = `
                     <div class="text-red-600 text-center p-4">
                         <h3 class="font-bold">No data found for selected range</h3>
-                        <p class="mt-2">This should not happen with nearest neighbor mapping. Check console for details.</p>
+                        <p class="mt-2">Try adjusting your selection ranges.</p>
                     </div>
                 `;
                 return;
@@ -574,18 +382,19 @@
             if (plotType === 'timeseries') {
                 const timeSeries = timeIndices.map(t => {
                     let sum = 0, count = 0;
+                    
                     for (let latIdx of latIndices) {
                         for (let lonIdx of lonIndices) {
-                            // Correct 3D array indexing: sst[time][lat][lon]
-                            // For flattened array: time * (lat_size * lon_size) + lat * lon_size + lon
                             const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
                             const value = sstData[index];
+                            
                             if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
                                 sum += value;
                                 count++;
                             }
                         }
                     }
+                    
                     return count > 0 ? sum / count : NaN;
                 });
 
@@ -594,24 +403,22 @@
                     return date.getFullYear() + (date.getMonth() / 12);
                 });
 
-                const dataTypeText = usingSimulatedData ? ' (Simulated Data)' : ' (Real ERSST Data)';
-
                 Plotly.newPlot('plot', [{
                     x: dates,
                     y: timeSeries,
                     type: 'scatter',
                     mode: 'lines',
                     name: 'Mean SST',
-                    line: { color: 'blue', width: 1 }
+                    line: { color: 'blue', width: 2 }
                 }], {
-                    title: `Mean SST Time Series${dataTypeText}<br>(${latResult.actualMin}°N-${latResult.actualMax}°N, ${lonResult.actualMin}°E-${lonResult.actualMax}°E, ${yearMin}-${yearMax})`,
+                    title: `Mean SST Time Series<br>(${latResult.actualMin}°N-${latResult.actualMax}°N, ${lonResult.actualMin}°E-${lonResult.actualMax}°E, ${yearMin}-${yearMax})`,
                     xaxis: { title: 'Year' },
                     yaxis: { title: 'SST (°C)' },
                     margin: { t: 80, b: 60, l: 60, r: 60 }
                 });
                 
             } else {
-                // Map plotting - fix the indexing here too
+                // Map plotting
                 const mapData = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
                 const counts = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
 
@@ -620,7 +427,6 @@
                         for (let j = 0; j < lonIndices.length; j++) {
                             const latIdx = latIndices[i];
                             const lonIdx = lonIndices[j];
-                            // Correct 3D array indexing
                             const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
                             const value = sstData[index];
                             if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
@@ -638,7 +444,7 @@
                         }
                     }
                 } else {
-                    // Standard deviation calculation - fix indexing here too
+                    // Standard deviation calculation
                     const means = mapData.map((row, i) => row.map((val, j) => counts[i][j] > 0 ? val / counts[i][j] : NaN));
                     const variances = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
                     
@@ -666,8 +472,6 @@
                     }
                 }
 
-                const dataTypeText = usingSimulatedData ? ' (Simulated Data)' : ' (Real ERSST Data)';
-
                 Plotly.newPlot('plot', [{
                     z: mapData,
                     x: lonIndices.map(i => lonData[i]),
@@ -676,7 +480,7 @@
                     colorscale: 'Viridis',
                     colorbar: { title: statistic === 'mean' ? 'SST (°C)' : 'SST Std Dev (°C)' }
                 }], {
-                    title: `${statistic === 'mean' ? 'Mean' : 'Standard Deviation'} SST Map${dataTypeText}<br>(${latResult.actualMin}°N-${latResult.actualMax}°N, ${lonResult.actualMin}°E-${lonResult.actualMax}°E, ${yearMin}-${yearMax})`,
+                    title: `${statistic === 'mean' ? 'Mean' : 'Standard Deviation'} SST Map<br>(${latResult.actualMin}°N-${latResult.actualMax}°N, ${lonResult.actualMin}°E-${lonResult.actualMax}°E, ${yearMin}-${yearMax})`,
                     xaxis: { title: 'Longitude (°E)' },
                     yaxis: { title: 'Latitude (°N)' },
                     margin: { t: 80, b: 60, l: 60, r: 60 }
@@ -688,10 +492,6 @@
         document.getElementById('plotType').addEventListener('change', updatePlot);
         document.getElementById('statistic').addEventListener('change', updatePlot);
         document.getElementById('updateBtn').addEventListener('click', updatePlot);
-        document.getElementById('reloadBtn').addEventListener('click', () => {
-            dataLoaded = false;
-            loadRealData();
-        });
         
         let timeout;
         ['latMin', 'latMax', 'lonMin', 'lonMax', 'yearMin', 'yearMax'].forEach(id => {
@@ -701,8 +501,8 @@
             });
         });
 
-        // Start loading when page loads
-        window.addEventListener('load', loadRealData);
+        // Load data when page loads
+        window.addEventListener('load', loadData);
     </script>
 </body>
 </html>
