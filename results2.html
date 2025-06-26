@@ -60,7 +60,8 @@
             <label for="plotType" class="block text-sm font-medium mb-2">Select Plot Type:</label>
             <select id="plotType" class="p-2 border rounded">
                 <option value="timeseries">Time Series</option>
-                <option value="map">Map</option>
+                <option value="map">Map (Simple)</option>
+                <option value="geomap">Geographic Map (with Coastlines)</option>
             </select>
         </div>
         
@@ -159,8 +160,15 @@
                     }
                 }
                 
+                updateStatus('Reading file content...');
+                const text = await response.text();
+                console.log('File size:', text.length, 'characters');
+                
+                // Fix NaN values in JSON (replace with null)
+                const fixedText = text.replace(/\bNaN\b/g, 'null');
+                
                 updateStatus('Parsing JSON data...');
-                const jsonData = await response.json();
+                const jsonData = JSON.parse(fixedText);
                 console.log('JSON data structure:', {
                     hasSST: !!jsonData.sst,
                     hasLat: !!jsonData.lat,
@@ -379,6 +387,147 @@
                 return;
             }
 
+            // Calculate SST data for both map types
+            const mapData = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
+            const counts = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
+
+            for (let t of timeIndices) {
+                for (let i = 0; i < latIndices.length; i++) {
+                    for (let j = 0; j < lonIndices.length; j++) {
+                        const latIdx = latIndices[i];
+                        const lonIdx = lonIndices[j];
+                        const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
+                        const value = sstData[index];
+                        if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
+                            mapData[i][j] += value;
+                            counts[i][j]++;
+                        }
+                    }
+                }
+            }
+
+            if (statistic === 'mean') {
+                for (let i = 0; i < latIndices.length; i++) {
+                    for (let j = 0; j < lonIndices.length; j++) {
+                        mapData[i][j] = counts[i][j] > 0 ? mapData[i][j] / counts[i][j] : NaN;
+                    }
+                }
+            } else {
+                // Standard deviation calculation
+                const means = mapData.map((row, i) => row.map((val, j) => counts[i][j] > 0 ? val / counts[i][j] : NaN));
+                const variances = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
+                
+                for (let t of timeIndices) {
+                    for (let i = 0; i < latIndices.length; i++) {
+                        for (let j = 0; j < lonIndices.length; j++) {
+                            const latIdx = latIndices[i];
+                            const lonIdx = lonIndices[j];
+                            const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
+                            const value = sstData[index];
+                            if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
+                                const mean = means[i][j];
+                                if (!isNaN(mean)) {
+                                    variances[i][j] += (value - mean) ** 2;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                for (let i = 0; i < latIndices.length; i++) {
+                    for (let j = 0; j < lonIndices.length; j++) {
+                        mapData[i][j] = counts[i][j] > 1 ? Math.sqrt(variances[i][j] / (counts[i][j] - 1)) : NaN;
+                    }
+                }
+            }
+
+            // Helper function to find nearest data point
+            function findNearestIndex(dataArray, targetValue) {
+                let minDistance = Infinity;
+                let nearestIndex = 0;
+                
+                for (let i = 0; i < dataArray.length; i++) {
+                    const distance = Math.abs(dataArray[i] - targetValue);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        nearestIndex = i;
+                    }
+                }
+                return nearestIndex;
+            }
+
+            // Helper function to find range of indices
+            function findRangeIndices(dataArray, minVal, maxVal) {
+                // Handle longitude wraparound (360° = 0°)
+                if (dataArray === lonData) {
+                    if (maxVal >= 360) {
+                        maxVal = Math.max(...dataArray);
+                    }
+                    if (minVal >= 360) {
+                        minVal = 0;
+                    }
+                }
+                
+                // Find all indices within the range
+                const indices = [];
+                for (let i = 0; i < dataArray.length; i++) {
+                    const value = dataArray[i];
+                    if (value >= minVal && value <= maxVal) {
+                        indices.push(i);
+                    }
+                }
+                
+                // If no exact matches, find nearest neighbors
+                if (indices.length === 0) {
+                    const minIndex = findNearestIndex(dataArray, minVal);
+                    const maxIndex = findNearestIndex(dataArray, maxVal);
+                    const startIdx = Math.min(minIndex, maxIndex);
+                    const endIdx = Math.max(minIndex, maxIndex);
+                    for (let i = startIdx; i <= endIdx; i++) {
+                        indices.push(i);
+                    }
+                }
+                
+                const actualMin = indices.length > 0 ? Math.min(...indices.map(i => dataArray[i])) : minVal;
+                const actualMax = indices.length > 0 ? Math.max(...indices.map(i => dataArray[i])) : maxVal;
+                
+                return {
+                    indices: indices,
+                    actualMin: actualMin,
+                    actualMax: actualMax
+                };
+            }
+
+            // Find indices for selected ranges
+            const timeIndices = timeData.reduce((acc, t, i) => {
+                const date = new Date(1800, 0, 1 + t);
+                const year = date.getFullYear();
+                if (year >= yearMin && year <= yearMax) acc.push(i);
+                return acc;
+            }, []);
+
+            const latResult = findRangeIndices(latData, latMin, latMax);
+            const lonResult = findRangeIndices(lonData, lonMin, lonMax);
+            
+            const latIndices = latResult.indices;
+            const lonIndices = lonResult.indices;
+
+            console.log('Plot ranges:', {
+                latitude: { requested: [latMin, latMax], actual: [latResult.actualMin, latResult.actualMax], count: latIndices.length },
+                longitude: { requested: [lonMin, lonMax], actual: [lonResult.actualMin, lonResult.actualMax], count: lonIndices.length },
+                time: { requested: [yearMin, yearMax], count: timeIndices.length }
+            });
+
+            if (latIndices.length === 0 || lonIndices.length === 0 || timeIndices.length === 0) {
+                document.getElementById('plot').innerHTML = `
+                    <div class="text-red-600 text-center p-4">
+                        <h3 class="font-bold">No data found for selected range</h3>
+                        <p class="mt-2">Try adjusting your selection ranges.</p>
+                    </div>
+                `;
+                return;
+            }
+
             if (plotType === 'timeseries') {
                 const timeSeries = timeIndices.map(t => {
                     let sum = 0, count = 0;
@@ -417,61 +566,10 @@
                     margin: { t: 80, b: 60, l: 60, r: 60 }
                 });
                 
-            } else {
-                // Map plotting
-                const mapData = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
-                const counts = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
-
-                for (let t of timeIndices) {
-                    for (let i = 0; i < latIndices.length; i++) {
-                        for (let j = 0; j < lonIndices.length; j++) {
-                            const latIdx = latIndices[i];
-                            const lonIdx = lonIndices[j];
-                            const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
-                            const value = sstData[index];
-                            if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
-                                mapData[i][j] += value;
-                                counts[i][j]++;
-                            }
-                        }
-                    }
-                }
-
-                if (statistic === 'mean') {
-                    for (let i = 0; i < latIndices.length; i++) {
-                        for (let j = 0; j < lonIndices.length; j++) {
-                            mapData[i][j] = counts[i][j] > 0 ? mapData[i][j] / counts[i][j] : NaN;
-                        }
-                    }
-                } else {
-                    // Standard deviation calculation
-                    const means = mapData.map((row, i) => row.map((val, j) => counts[i][j] > 0 ? val / counts[i][j] : NaN));
-                    const variances = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
-                    
-                    for (let t of timeIndices) {
-                        for (let i = 0; i < latIndices.length; i++) {
-                            for (let j = 0; j < lonIndices.length; j++) {
-                                const latIdx = latIndices[i];
-                                const lonIdx = lonIndices[j];
-                                const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
-                                const value = sstData[index];
-                                if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
-                                    const mean = means[i][j];
-                                    if (!isNaN(mean)) {
-                                        variances[i][j] += (value - mean) ** 2;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    for (let i = 0; i < latIndices.length; i++) {
-                        for (let j = 0; j < lonIndices.length; j++) {
-                            mapData[i][j] = counts[i][j] > 1 ? Math.sqrt(variances[i][j] / (counts[i][j] - 1)) : NaN;
-                        }
-                    }
-                }
-
+                });
+                
+            } else if (plotType === 'map') {
+                // Simple map plotting (original heatmap)
                 Plotly.newPlot('plot', [{
                     z: mapData,
                     x: lonIndices.map(i => lonData[i]),
@@ -485,6 +583,76 @@
                     yaxis: { title: 'Latitude (°N)' },
                     margin: { t: 80, b: 60, l: 60, r: 60 }
                 });
+                
+            } else if (plotType === 'geomap') {
+                // Geographic map with coastlines and country borders
+                
+                // Convert data to 1D arrays for scatter plot on geographic map
+                const lons = [];
+                const lats = [];
+                const values = [];
+                
+                for (let i = 0; i < latIndices.length; i++) {
+                    for (let j = 0; j < lonIndices.length; j++) {
+                        if (!isNaN(mapData[i][j]) && isFinite(mapData[i][j])) {
+                            lats.push(latData[latIndices[i]]);
+                            lons.push(lonData[lonIndices[j]]);
+                            values.push(mapData[i][j]);
+                        }
+                    }
+                }
+
+                const traces = [
+                    {
+                        type: 'scattergeo',
+                        lon: lons,
+                        lat: lats,
+                        mode: 'markers',
+                        marker: {
+                            size: 8,
+                            color: values,
+                            colorscale: 'Viridis',
+                            colorbar: {
+                                title: statistic === 'mean' ? 'SST (°C)' : 'SST Std Dev (°C)',
+                                x: 1.02
+                            },
+                            line: { width: 0.5, color: 'white' }
+                        },
+                        text: values.map(v => `${v.toFixed(2)}°C`),
+                        hovertemplate: 'Lon: %{lon}°<br>Lat: %{lat}°<br>SST: %{text}<extra></extra>'
+                    }
+                ];
+
+                const layout = {
+                    title: `${statistic === 'mean' ? 'Mean' : 'Standard Deviation'} SST Geographic Map<br>(${latResult.actualMin}°N-${latResult.actualMax}°N, ${lonResult.actualMin}°E-${lonResult.actualMax}°E, ${yearMin}-${yearMax})`,
+                    geo: {
+                        projection: { type: 'natural earth' },
+                        showland: true,
+                        landcolor: 'rgb(243, 243, 243)',
+                        coastlinecolor: 'rgb(70, 70, 70)',
+                        coastlinewidth: 1,
+                        showocean: true,
+                        oceancolor: 'rgb(230, 245, 255)',
+                        showcountries: true,
+                        countrycolor: 'rgb(150, 150, 150)',
+                        countrywidth: 0.5,
+                        showlakes: true,
+                        lakecolor: 'rgb(230, 245, 255)',
+                        showrivers: false,
+                        lonaxis: {
+                            range: [Math.min(...lons) - 5, Math.max(...lons) + 5]
+                        },
+                        lataxis: {
+                            range: [Math.min(...lats) - 5, Math.max(...lats) + 5]
+                        },
+                        bgcolor: 'rgba(0,0,0,0)'
+                    },
+                    margin: { t: 80, b: 60, l: 60, r: 120 },
+                    paper_bgcolor: 'white',
+                    plot_bgcolor: 'white'
+                };
+
+                Plotly.newPlot('plot', traces, layout);
             }
         }
 
