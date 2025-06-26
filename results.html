@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Results</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        img { max-width: 600px; margin: 20px auto; display: block; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <!-- Navigation -->
+    <nav class="bg-blue-600 text-white p-4">
+        <ul class="flex space-x-6 justify-center">
+            <li><a href="index.html" class="hover:underline">Introduction</a></li>
+            <li><a href="results.html" class="hover:underline">Results</a></li>
+            <li><a href="results2.html" class="hover:underline">Results 2</a></li>
+            <li><a href="references.html" class="hover:underline">References</a></li>
+            <li><a href="contact.html" class="hover:underline">Contact</a></li>
+        </ul>
+    </nav>
+    <!-- Results Page -->
+    <div class="container mx-auto p-6">
+        <h1 class="text-3xl font-bold mb-4">Research Results</h1>
+        <div class="mb-6">
+            <label for="scenario" class="block text-lg font-medium mb-2">Select Scenario:</label>
+            <select id="scenario" class="p-2 border rounded">
+                <option value="SSP245">SSP245</option>
+                <option value="SSP370">SSP370</option>
+                <option value="SSP585">SSP585</option>
+            </select>
+        </div>
+        <div class="mb-6">
+            <label for="period" class="block text-lg font-medium mb-2">Select Time Period:</label>
+            <select id="period" class="p-2 border rounded">
+                <option value="2030-2060">2030-2060</option>
+                <option value="2070-2100">2070-2100</option>
+            </select>
+        </div>
+        <img id="resultImage" src="figures_show/SSP245_2030-2060.png" alt="SSP245 2030-2060 Figure">
+    </div>
+    <script src="figures_show/image-swap.js"></script>
+</body>
+</html>
