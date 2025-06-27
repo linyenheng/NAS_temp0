@@ -614,4 +614,20 @@
         // Event listeners
         document.getElementById('plotType').addEventListener('change', updatePlot);
         document.getElementById('statistic').addEventListener('change', updatePlot);
-        document.getElementById('contourLev
+        document.getElementById('contourLevels').addEventListener('input', updatePlot);
+        document.getElementById('showContourLines').addEventListener('change', updatePlot);
+        document.getElementById('updateBtn').addEventListener('click', updatePlot);
+        
+        let timeout;
+        ['latMin', 'latMax', 'lonMin', 'lonMax', 'yearMin', 'yearMax'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => {
+                clearTimeout(timeout);
+                timeout = setTimeout(updatePlot, 500);
+            });
+        });
+
+        // Load data when page loads
+        window.addEventListener('load', loadData);
+    </script>
+</body>
+</html>
