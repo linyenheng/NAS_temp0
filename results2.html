@@ -436,7 +436,7 @@
                 
             } else {
                 // Calculate SST data for both contour and geographic maps
-                const mapData = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
+                const mapData = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(NaN));
                 const counts = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
 
                 for (let t of timeIndices) {
@@ -447,7 +447,11 @@
                             const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
                             const value = sstData[index];
                             if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
-                                mapData[i][j] += value;
+                                if (counts[i][j] === 0) {
+                                    mapData[i][j] = value;
+                                } else {
+                                    mapData[i][j] += value;
+                                }
                                 counts[i][j]++;
                             }
                         }
@@ -457,12 +461,16 @@
                 if (statistic === 'mean') {
                     for (let i = 0; i < latIndices.length; i++) {
                         for (let j = 0; j < lonIndices.length; j++) {
-                            mapData[i][j] = counts[i][j] > 0 ? mapData[i][j] / counts[i][j] : NaN;
+                            if (counts[i][j] > 0) {
+                                mapData[i][j] = mapData[i][j] / counts[i][j];
+                            } else {
+                                mapData[i][j] = null; // Use null for missing data
+                            }
                         }
                     }
                 } else {
                     // Standard deviation calculation
-                    const means = mapData.map((row, i) => row.map((val, j) => counts[i][j] > 0 ? val / counts[i][j] : NaN));
+                    const means = mapData.map((row, i) => row.map((val, j) => counts[i][j] > 0 ? val / counts[i][j] : null));
                     const variances = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
                     
                     for (let t of timeIndices) {
@@ -474,7 +482,7 @@
                                 const value = sstData[index];
                                 if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
                                     const mean = means[i][j];
-                                    if (!isNaN(mean)) {
+                                    if (mean !== null && !isNaN(mean)) {
                                         variances[i][j] += (value - mean) ** 2;
                                     }
                                 }
@@ -484,7 +492,11 @@
                     
                     for (let i = 0; i < latIndices.length; i++) {
                         for (let j = 0; j < lonIndices.length; j++) {
-                            mapData[i][j] = counts[i][j] > 1 ? Math.sqrt(variances[i][j] / (counts[i][j] - 1)) : NaN;
+                            if (counts[i][j] > 1) {
+                                mapData[i][j] = Math.sqrt(variances[i][j] / (counts[i][j] - 1));
+                            } else {
+                                mapData[i][j] = null; // Use null for missing data
+                            }
                         }
                     }
                 }
@@ -506,10 +518,11 @@
                         contours: {
                             coloring: 'fill',
                             showlabels: false,
-                            size: (Math.max(...mapData.flat().filter(v => !isNaN(v))) - Math.min(...mapData.flat().filter(v => !isNaN(v)))) / contourLevels
+                            size: (Math.max(...mapData.flat().filter(v => v !== null && !isNaN(v))) - Math.min(...mapData.flat().filter(v => v !== null && !isNaN(v)))) / contourLevels
                         },
                         colorbar: { title: statistic === 'mean' ? 'SST (°C)' : 'SST Std Dev (°C)' },
-                        hovertemplate: 'Lon: %{x}°E<br>Lat: %{y}°N<br>SST: %{z:.2f}°C<extra></extra>'
+                        hovertemplate: 'Lon: %{x}°E<br>Lat: %{y}°N<br>SST: %{z:.2f}°C<extra></extra>',
+                        connectgaps: false // Don't interpolate across missing data
                     });
                     
                     // Add contour lines if requested
@@ -523,11 +536,12 @@
                                 coloring: 'lines',
                                 showlabels: true,
                                 labelfont: { size: 10, color: 'white' },
-                                size: (Math.max(...mapData.flat().filter(v => !isNaN(v))) - Math.min(...mapData.flat().filter(v => !isNaN(v)))) / contourLevels
+                                size: (Math.max(...mapData.flat().filter(v => v !== null && !isNaN(v))) - Math.min(...mapData.flat().filter(v => v !== null && !isNaN(v)))) / contourLevels
                             },
                             line: { color: 'white', width: 1 },
                             showscale: false,
-                            hoverinfo: 'skip'
+                            hoverinfo: 'skip',
+                            connectgaps: false // Don't interpolate across missing data
                         });
                     }
 
