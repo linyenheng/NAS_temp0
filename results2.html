@@ -108,15 +108,9 @@
         </div>
         
         <div id="contourOptions" class="mb-6 hidden">
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label for="contourLevels" class="block text-sm font-medium mb-2">Number of Contour Levels:</label>
-                    <input type="number" id="contourLevels" class="p-2 border rounded w-full" value="20" min="5" max="50" step="1">
-                </div>
-                <div>
-                    <label for="showContourLines" class="block text-sm font-medium mb-2">Show Contour Lines:</label>
-                    <input type="checkbox" id="showContourLines" class="p-2" checked>
-                </div>
+            <div>
+                <label for="showContourLines" class="block text-sm font-medium mb-2">Show Contour Lines:</label>
+                <input type="checkbox" id="showContourLines" class="p-2" checked>
             </div>
         </div>
         
@@ -436,7 +430,7 @@
                 
             } else {
                 // Calculate SST data for both contour and geographic maps
-                const mapData = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(NaN));
+                const mapData = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(null));
                 const counts = Array(latIndices.length).fill().map(() => Array(lonIndices.length).fill(0));
 
                 for (let t of timeIndices) {
@@ -446,7 +440,13 @@
                             const lonIdx = lonIndices[j];
                             const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
                             const value = sstData[index];
-                            if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
+                            // Check for valid SST values (excluding fill values and land/null values)
+                            if (!isNaN(value) && isFinite(value) && 
+                                value !== -9.96921e36 && 
+                                value !== -1.7999999523162842 && 
+                                value !== null && 
+                                Math.abs(value + 1.8) > 0.001) { // Extra check for fill value variants
+                                
                                 if (counts[i][j] === 0) {
                                     mapData[i][j] = value;
                                 } else {
@@ -464,7 +464,7 @@
                             if (counts[i][j] > 0) {
                                 mapData[i][j] = mapData[i][j] / counts[i][j];
                             } else {
-                                mapData[i][j] = null; // Use null for missing data
+                                mapData[i][j] = null; // Keep as null for missing data
                             }
                         }
                     }
@@ -502,9 +502,26 @@
                 }
 
                 if (plotType === 'contour') {
-                    // Contour plot with customizable options
-                    const contourLevels = parseInt(document.getElementById('contourLevels').value);
+                    // Contour plot with fixed levels
+                    const contourLevels = 20; // Fixed number of levels
                     const showContourLines = document.getElementById('showContourLines').checked;
+                    
+                    // Filter out null values for min/max calculation
+                    const validValues = mapData.flat().filter(v => v !== null && !isNaN(v) && isFinite(v));
+                    
+                    if (validValues.length === 0) {
+                        document.getElementById('plot').innerHTML = `
+                            <div class="text-red-600 text-center p-4">
+                                <h3 class="font-bold">No valid data found</h3>
+                                <p class="mt-2">All data points are null or invalid.</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    const minVal = Math.min(...validValues);
+                    const maxVal = Math.max(...validValues);
+                    const contourSize = (maxVal - minVal) / contourLevels;
                     
                     const traces = [];
                     
@@ -518,11 +535,16 @@
                         contours: {
                             coloring: 'fill',
                             showlabels: false,
-                            size: (Math.max(...mapData.flat().filter(v => v !== null && !isNaN(v))) - Math.min(...mapData.flat().filter(v => v !== null && !isNaN(v)))) / contourLevels
+                            size: contourSize,
+                            start: minVal,
+                            end: maxVal
                         },
                         colorbar: { title: statistic === 'mean' ? 'SST (°C)' : 'SST Std Dev (°C)' },
                         hovertemplate: 'Lon: %{x}°E<br>Lat: %{y}°N<br>SST: %{z:.2f}°C<extra></extra>',
-                        connectgaps: false // Don't interpolate across missing data
+                        connectgaps: false, // Don't interpolate across missing data
+                        zauto: false,
+                        zmin: minVal,
+                        zmax: maxVal
                     });
                     
                     // Add contour lines if requested
@@ -536,12 +558,17 @@
                                 coloring: 'lines',
                                 showlabels: true,
                                 labelfont: { size: 10, color: 'white' },
-                                size: (Math.max(...mapData.flat().filter(v => v !== null && !isNaN(v))) - Math.min(...mapData.flat().filter(v => v !== null && !isNaN(v)))) / contourLevels
+                                size: contourSize,
+                                start: minVal,
+                                end: maxVal
                             },
                             line: { color: 'white', width: 1 },
                             showscale: false,
                             hoverinfo: 'skip',
-                            connectgaps: false // Don't interpolate across missing data
+                            connectgaps: false, // Don't interpolate across missing data
+                            zauto: false,
+                            zmin: minVal,
+                            zmax: maxVal
                         });
                     }
 
@@ -562,7 +589,7 @@
                     
                     for (let i = 0; i < latIndices.length; i++) {
                         for (let j = 0; j < lonIndices.length; j++) {
-                            if (!isNaN(mapData[i][j]) && isFinite(mapData[i][j])) {
+                            if (!isNaN(mapData[i][j]) && isFinite(mapData[i][j]) && mapData[i][j] !== null) {
                                 lats.push(latData[latIndices[i]]);
                                 lons.push(lonData[lonIndices[j]]);
                                 values.push(mapData[i][j]);
@@ -628,7 +655,6 @@
         // Event listeners
         document.getElementById('plotType').addEventListener('change', updatePlot);
         document.getElementById('statistic').addEventListener('change', updatePlot);
-        document.getElementById('contourLevels').addEventListener('input', updatePlot);
         document.getElementById('showContourLines').addEventListener('change', updatePlot);
         document.getElementById('updateBtn').addEventListener('click', updatePlot);
         
