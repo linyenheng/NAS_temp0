@@ -399,7 +399,16 @@
                             const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
                             const value = sstData[index];
                             
-                            if (!isNaN(value) && isFinite(value) && value !== -9.96921e36) {
+                            // Check for valid SST values (excluding fill values, land/null values, and zeros)
+                            if (!isNaN(value) && isFinite(value) && 
+                                value !== -9.96921e36 && 
+                                value !== -1.7999999523162842 && 
+                                value !== null && 
+                                value !== 0 &&  // Exclude exact zeros
+                                Math.abs(value) > 0.1 && // Exclude near-zero values
+                                Math.abs(value + 1.8) > 0.001 && // Extra check for fill value variants
+                                value > -5 && value < 50) { // Reasonable SST range check
+                                
                                 sum += value;
                                 count++;
                             }
@@ -440,12 +449,15 @@
                             const lonIdx = lonIndices[j];
                             const index = t * (latData.length * lonData.length) + latIdx * lonData.length + lonIdx;
                             const value = sstData[index];
-                            // Check for valid SST values (excluding fill values and land/null values)
+                            // Check for valid SST values (excluding fill values, land/null values, and zeros)
                             if (!isNaN(value) && isFinite(value) && 
                                 value !== -9.96921e36 && 
                                 value !== -1.7999999523162842 && 
                                 value !== null && 
-                                Math.abs(value + 1.8) > 0.001) { // Extra check for fill value variants
+                                value !== 0 &&  // Exclude exact zeros
+                                Math.abs(value) > 0.1 && // Exclude near-zero values
+                                Math.abs(value + 1.8) > 0.001 && // Extra check for fill value variants
+                                value > -5 && value < 50) { // Reasonable SST range check
                                 
                                 if (counts[i][j] === 0) {
                                     mapData[i][j] = value;
