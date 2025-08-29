@@ -25,7 +25,7 @@
     <div class="container mx-auto p-6">
         <h1 class="text-3xl font-bold mb-4">Results 3</h1>
         <p class="text-lg mb-4">
-            Interactive map showing climate data points from data_use/result3_01.txt. Hover over points for details. The map is zoomable and pannable. If the map background isn't loading, check your internet connection (it uses online tiles from OpenStreetMap) and browser console (F12) for errors.
+            Interactive map showing tank data points from data_use/result3_02_station.csv. Hover over points for details. The map is zoomable and pannable. If the map background isn't loading, check your internet connection (it uses online tiles from OpenStreetMap) and browser console (F12) for errors.
         </p>
         <div id="map" class="h-96 w-full rounded-lg shadow-md"></div>
     </div>
@@ -39,7 +39,7 @@
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
-        // Load and parse the TXT file (assuming it's CSV-formatted; in the 'data_use' subfolder)
+        // Load and parse the CSV file (in the 'data_use' subfolder)
         fetch('data_use/result3_02_station.csv')
             .then(response => {
                 if (!response.ok) {
@@ -47,8 +47,8 @@
                 }
                 return response.text();
             })
-            .then(txtText => {
-                Papa.parse(txtText, {
+            .then(csvText => {
+                Papa.parse(csvText, {
                     header: true,
                     skipEmptyLines: true,
                     complete: function(results) {
@@ -61,10 +61,12 @@
                             if (!isNaN(lat) && !isNaN(lon)) {
                                 var marker = L.marker([lat, lon]).addTo(map);
                                 var popupContent = `
-                                    <b>Temperature:</b> ${point.temperature || 'N/A'}<br>
-                                    <b>Precipitation:</b> ${point.preciptation || point.precipitation || 'N/A'}<br> <!-- Handle possible typo in header -->
-                                    <b>Category 1:</b> ${point['category 1'] || point.category1 || 'N/A'}<br> <!-- Handle spaces in header -->
-                                    <b>Category 2:</b> ${point['category2'] || point.category2 || 'N/A'}
+                                    <b>Area (m2):</b> ${point['Area (m2)'] || 'N/A'}<br>
+                                    <b>Perimeter (m):</b> ${point['Perimeter (m)'] || 'N/A'}<br>
+                                    <b>Diameter (m):</b> ${point['Diameter (m)'] || 'N/A'}<br>
+                                    <b>Tank Height (m):</b> ${point['Tank Height (m)'] || 'N/A'}<br>
+                                    <b>Berm Height (m):</b> ${point['Berm Height (m)'] || 'N/A'}<br>
+                                    <b>Type:</b> ${point.Type || 'N/A'}
                                 `;
                                 marker.bindPopup(popupContent);
 
@@ -93,8 +95,8 @@
                 });
             })
             .catch(error => {
-                console.error('Error loading TXT file:', error);
-                alert('Failed to load data_use/result3_01.txt. Please ensure the file exists in the "data_use" subfolder and is accessible.');
+                console.error('Error loading CSV file:', error);
+                alert('Failed to load data_use/result3_02_station.csv. Please ensure the file exists in the "data_use" subfolder and is accessible.');
             });
     </script>
 </body>
