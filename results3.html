@@ -25,7 +25,7 @@
     <div class="container mx-auto p-6">
         <h1 class="text-3xl font-bold mb-4">Results 3</h1>
         <p class="text-lg mb-4">
-            Interactive map showing climate data points from a CSV file. Hover over points for details. The map is zoomable and pannable.
+            Interactive map showing climate data points from data_use/result3_01.txt. Hover over points for details. The map is zoomable and pannable. If the map background isn't loading, check your internet connection (it uses online tiles from OpenStreetMap) and browser console (F12) for errors.
         </p>
         <div id="map" class="h-96 w-full rounded-lg shadow-md"></div>
     </div>
@@ -39,11 +39,16 @@
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
-        // Load and parse the CSV file (assume 'data.csv' is in the same directory)
+        // Load and parse the TXT file (assuming it's CSV-formatted; in the 'data_use' subfolder)
         fetch('data_use/result3_01.txt')
-            .then(response => response.text())
-            .then(csvText => {
-                Papa.parse(csvText, {
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok: ' + response.statusText);
+                }
+                return response.text();
+            })
+            .then(txtText => {
+                Papa.parse(txtText, {
                     header: true,
                     skipEmptyLines: true,
                     complete: function(results) {
@@ -78,13 +83,18 @@
                         // Fit the map to the bounds of all points, if any
                         if (bounds.isValid()) {
                             map.fitBounds(bounds, { padding: [50, 50] });
+                        } else {
+                            console.warn('No valid points found in the data.');
                         }
+                    },
+                    error: function(error) {
+                        console.error('PapaParse error:', error);
                     }
                 });
             })
             .catch(error => {
-                console.error('Error loading CSV:', error);
-                alert('Failed to load data.csv. Please ensure the file exists in the same directory.');
+                console.error('Error loading TXT file:', error);
+                alert('Failed to load data_use/result3_01.txt. Please ensure the file exists in the "data_use" subfolder and is accessible.');
             });
     </script>
 </body>
