@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Results - Results 3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <!-- Navigation -->
+    <nav class="bg-blue-600 text-white p-4">
+        <ul class="flex space-x-6 justify-center">
+            <li><a href="index.html" class="hover:underline">Introduction</a></li>
+            <li><a href="results.html" class="hover:underline">Results</a></li>
+            <li><a href="results2.html" class="hover:underline">Results 2</a></li>
+            <li><a href="results3.html" class="hover:underline">Results 3</a></li>
+            <li><a href="references.html" class="hover:underline">References</a></li>
+            <li><a href="contact.html" class="hover:underline">Contact</a></li>
+        </ul>
+    </nav>
+    <!-- Results 3 Page -->
+    <div class="container mx-auto p-6">
+        <h1 class="text-3xl font-bold mb-4">Results 3</h1>
+        <p class="text-lg mb-4">
+            Interactive map showing climate data points from a CSV file. Hover over points for details. The map is zoomable and pannable.
+        </p>
+        <div id="map" class="h-96 w-full rounded-lg shadow-md"></div>
+    </div>
+
+    <script>
+        // Initialize the map (initial view can be adjusted based on your data extent)
+        var map = L.map('map').setView([0, 0], 2); // Start with a world view; will fit bounds later
+
+        // Add OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // Load and parse the CSV file (assume 'data.csv' is in the same directory)
+        fetch('data_use/result3_01.txt')
+            .then(response => response.text())
+            .then(csvText => {
+                Papa.parse(csvText, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        var points = results.data;
+                        var bounds = L.latLngBounds();
+
+                        points.forEach(function(point) {
+                            var lat = parseFloat(point.lat);
+                            var lon = parseFloat(point.lon);
+                            if (!isNaN(lat) && !isNaN(lon)) {
+                                var marker = L.marker([lat, lon]).addTo(map);
+                                var popupContent = `
+                                    <b>Temperature:</b> ${point.temperature || 'N/A'}<br>
+                                    <b>Precipitation:</b> ${point.preciptation || point.precipitation || 'N/A'}<br> <!-- Handle possible typo in header -->
+                                    <b>Category 1:</b> ${point['category 1'] || point.category1 || 'N/A'}<br> <!-- Handle spaces in header -->
+                                    <b>Category 2:</b> ${point['category2'] || point.category2 || 'N/A'}
+                                `;
+                                marker.bindPopup(popupContent);
+
+                                // Open popup on hover (mouseover), close on mouseout
+                                marker.on('mouseover', function(e) {
+                                    this.openPopup();
+                                });
+                                marker.on('mouseout', function(e) {
+                                    this.closePopup();
+                                });
+
+                                bounds.extend([lat, lon]);
+                            }
+                        });
+
+                        // Fit the map to the bounds of all points, if any
+                        if (bounds.isValid()) {
+                            map.fitBounds(bounds, { padding: [50, 50] });
+                        }
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error loading CSV:', error);
+                alert('Failed to load data.csv. Please ensure the file exists in the same directory.');
+            });
+    </script>
+</body>
+</html>
