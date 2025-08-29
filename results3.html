@@ -40,7 +40,7 @@
         }).addTo(map);
 
         // Load and parse the TXT file (assuming it's CSV-formatted; in the 'data_use' subfolder)
-        fetch('data_use/result3_01.txt')
+        fetch('data_use/result3_02_station.csv')
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Network response was not ok: ' + response.statusText);
